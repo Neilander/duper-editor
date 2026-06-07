@@ -181,11 +181,16 @@
   .cellinfo{position:fixed;top:184px;right:8px;z-index:60;min-width:132px;background:rgba(16,22,30,.97);
     border:1px solid var(--line2);border-radius:12px;padding:8px 10px;box-shadow:0 8px 24px rgba(0,0,0,.45);
     opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .15s,transform .15s}
-  .cellinfo.on{opacity:1;transform:none}
+  .cellinfo.on{opacity:1;transform:none;pointer-events:auto}
   .cellinfo .ci-h{font-size:10px;color:var(--dim2);letter-spacing:.5px;margin-bottom:5px}
   .cellinfo .ci-row{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12.5px;padding:2px 0}
   .cellinfo .ci-row span{color:var(--ink)} .cellinfo .ci-row b{color:var(--gold);font-weight:700;white-space:nowrap}
   .cellinfo .ci-none{font-size:11.5px;color:var(--dim)}
+  .cellinfo .ci-pick{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 4px}
+  .cellinfo .ci-b{width:36px;height:36px;border-radius:9px;border:1px solid var(--line2);background:#1b2430;color:var(--ink);font-size:20px;font-weight:700;line-height:1;cursor:pointer}
+  .cellinfo .ci-b:active{background:#26303d}
+  .cellinfo .ci-q{font-size:15px;color:var(--ink);min-width:48px;text-align:center} .cellinfo .ci-q b{color:var(--gold);font-size:19px;font-weight:800}
+  .cellinfo .ci-foot{font-size:10.5px;color:var(--dim);line-height:1.5;margin-top:2px}
 
   /* attack result card */
   .result{position:fixed;left:0;right:0;bottom:0;z-index:55;transform:translateY(112%);transition:transform .3s var(--sheet-ease);
@@ -504,35 +509,38 @@ function toggleMove(){ moveMode=!moveMode; moveSrc=null;
   if(moveMode){ attackMode=false; atkTile=null; document.getElementById('atk-btn').classList.remove('on'); }
   document.getElementById('mv-btn').classList.toggle('on',moveMode);
   render(); toast(moveMode?'🦶 移动：点你的地面兵/飞机 → 点己方可达格（同兵种合并，移动力取最低；飞机可飞越）':'已退出移动'); }
+function moveQty(delta){ if(!moveSrc)return; moveSrc.qty=Math.max(1,Math.min(moveSrc.max,(moveSrc.qty||moveSrc.max)+delta)); showCellInfo(moveSrc.r,moveSrc.c); }
 function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选有效地块'); return; }
   if(!moveSrc){
     if(d.owner<1){ toast('选你自己的格子'); return; }
-    let kind=null,stam=0,reach=null,desc='';
+    let kind=null,stam=0,reach=null,desc='',max=0;
     if(d.hasAir&&d.airCount>0){ // 有飞机 → 按飞机范围选目的地
-      kind='air'; stam=aStam(d); reach=airReach(b,r,c,stam); desc='飞机×'+d.airCount;
+      kind='air'; stam=aStam(d); reach=airReach(b,r,c,stam); max=d.airCount; desc='飞机×'+d.airCount;
       if(d.ground!=='none'&&d.groundCount>0) desc+='（'+(d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount+'：目的地它们走得到才随行）';
-    } else if(d.ground!=='none'&&d.groundCount>0){ kind='ground'; stam=gStam(d); reach=reachMap(b,r,c,stam); desc=(d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount; }
+    } else if(d.ground!=='none'&&d.groundCount>0){ kind='ground'; stam=gStam(d); reach=reachMap(b,r,c,stam); max=d.groundCount; desc=(d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount; }
     if(!kind){ toast('选你的有兵格（地面兵或飞机）'); return; }
     if(stam<=0){ toast('这些单位本回合移动力已用完'); return; }
-    moveSrc={r,c,kind,stam,reach};
-    render(); toast(desc+'，移动力剩 '+stam+(kind==='air'?'（飞机可飞越，点己方可达格）':'，点己方可达格移动'));
+    moveSrc={r,c,kind,stam,reach,max,qty:max};
+    render(); showCellInfo(r,c); toast(desc+'，移动力剩 '+stam+'；浮窗里可调移动数量（分兵）');
     return;
   }
-  if(moveSrc.r===r&&moveSrc.c===c){ moveSrc=null; render(); return; }
+  if(moveSrc.r===r&&moveSrc.c===c){ moveSrc=null; render(); showCellInfo(r,c); return; }
   const cost=moveSrc.reach[r+','+c];
   if(cost==null){ toast(moveSrc.kind==='air'?'超范围：飞机按直线距离，最多移动力格':'超范围：只能沿己方相邻格流动'); return; }
   const A=b[moveSrc.r][moveSrc.c], B=b[r][c];
+  const have=(moveSrc.kind==='air'?A.airCount:A.groundCount);
+  const qty=Math.max(1,Math.min(moveSrc.qty||moveSrc.max, have));
+  const fullLeave=(qty>=have);
   if(moveSrc.kind==='air'){
     pushUndo();
     const arrive=aStam(A)-cost;
-    // 地面兵随行：当且仅当目的地在它们自己走得到的范围内（且兵种可合并）
     let carried='', gReach=null;
     if(A.ground!=='none'&&A.groundCount>0) gReach=reachMap(b,moveSrc.r,moveSrc.c,gStam(A));
     const gcost = gReach? gReach[r+','+c] : null;
     const groundGoes = (gcost!=null && (B.ground==='none'||B.ground===A.ground));
-    if(B.hasAir&&B.airCount>0){ B.airCount+=A.airCount; B.am=Math.min(aStam(B),arrive); }
-    else { B.hasAir=true; B.airCount=A.airCount; B.am=arrive; B.showLevel=true; }
-    A.hasAir=false; A.airCount=0; delete A.am;
+    if(B.hasAir&&B.airCount>0){ B.airCount+=qty; B.am=Math.min(aStam(B),arrive); }
+    else { B.hasAir=true; B.airCount=qty; B.am=arrive; B.showLevel=true; }
+    A.airCount-=qty; if(A.airCount<=0){ A.hasAir=false; A.airCount=0; delete A.am; }
     if(groundGoes){
       const gArr=gStam(A)-gcost;
       if(B.ground===A.ground&&B.groundCount>0){ B.groundCount+=A.groundCount; B.gm=Math.min(gStam(B),gArr); }
@@ -541,42 +549,38 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
       A.ground='none'; A.groundCount=0; delete A.gm;
     }
     const left=B.am; moveSrc=null; render(); selTile={r,c}; showCellInfo(r,c); scheduleSave();
-    toast('飞机'+carried+'移动 '+cost+' 格'+(A.ground!=='none'&&!groundGoes?'（地面兵走不到，留下）':'')+'，飞机移动力剩 '+left); return;
+    toast('飞机×'+qty+carried+' 移动 '+cost+' 格，飞机移动力剩 '+left); return;
   }
   if(B.ground!=='none'&&B.ground!==A.ground){
-    // 目标格有不同地面兵种 → 换位：把对方退到我来路的相邻格（前提它有移动力）
+    // 目标格有不同地面兵种 → 换位：对方退到我来路相邻格（需它有移动力；分兵时源格未腾空则无处可退）
     if(gStam(B)<=0){ toast('目标格单位没有移动力，无法进入/换位'); return; }
     let via=null;
     for(const [nr,nc] of nb(r,c)){
       if(moveSrc.reach[nr+','+nc]===cost-1){
         const T=b[nr][nc], isSrc=(nr===moveSrc.r&&nc===moveSrc.c);
-        if(isSrc||T.ground==='none'||T.ground===B.ground){ via={r:nr,c:nc}; break; }
+        if((isSrc&&fullLeave)||(!isSrc&&(T.ground==='none'||T.ground===B.ground))){ via={r:nr,c:nc}; break; }
       }
     }
-    if(!via){ toast('换位失败：来路上没有能安置对方单位的格'); return; }
+    if(!via){ toast(fullLeave?'换位失败：来路上没有能安置对方单位的格':'分兵换位失败：源格还留着兵，对方无处可退（需整组移动）'); return; }
     pushUndo();
-    const Ut=A.ground,Uc=A.groundCount,Ua=gStam(A)-cost;   // 我方
-    const Vt=B.ground,Vc=B.groundCount,Vs=gStam(B);         // 对方（被换）
-    A.ground='none';A.groundCount=0;delete A.gm;            // 源腾空
-    B.ground=Ut;B.groundCount=Uc;B.gm=Ua;B.showLevel=true;  // 我方→B
-    const dst=b[via.r][via.c];                              // 对方→来路格（退1步）
+    const Ut=A.ground,Ua=gStam(A)-cost;
+    const Vt=B.ground,Vc=B.groundCount,Vs=gStam(B);
+    A.groundCount-=qty; if(A.groundCount<=0){ A.ground='none'; A.groundCount=0; delete A.gm; }
+    B.ground=Ut; B.groundCount=qty; B.gm=Ua; B.showLevel=true;
+    const dst=b[via.r][via.c];
     if(dst.ground===Vt&&dst.groundCount>0){ dst.groundCount+=Vc; dst.gm=Math.min(gStam(dst),Vs-1); }
-    else { dst.ground=Vt;dst.groundCount=Vc;dst.gm=Vs-1;dst.showLevel=true; }
+    else { dst.ground=Vt; dst.groundCount=Vc; dst.gm=Vs-1; dst.showLevel=true; }
     moveSrc=null; render(); selTile={r,c}; showCellInfo(r,c); scheduleSave();
-    toast('换位：'+(Ut==='tank'?'坦克':'士兵')+'×'+Uc+'进('+r+','+c+')，'+(Vt==='tank'?'坦克':'士兵')+'×'+Vc+'退到('+via.r+','+via.c+')');
+    toast('换位：'+(Ut==='tank'?'坦克':'士兵')+'×'+qty+'进('+r+','+c+')，'+(Vt==='tank'?'坦克':'士兵')+'×'+Vc+'退到('+via.r+','+via.c+')');
     return;
   }
   pushUndo();
   const arriveStam=gStam(A)-cost;
-  if(B.ground===A.ground&&B.groundCount>0){
-    B.groundCount+=A.groundCount;
-    B.gm=Math.min(gStam(B),arriveStam);   // 合并取最低移动力
-  } else {
-    B.ground=A.ground; B.groundCount=A.groundCount; B.gm=arriveStam; B.showLevel=true;
-  }
-  A.ground='none'; A.groundCount=0; delete A.gm;
+  if(B.ground===A.ground&&B.groundCount>0){ B.groundCount+=qty; B.gm=Math.min(gStam(B),arriveStam); }
+  else { B.ground=A.ground; B.groundCount=qty; B.gm=arriveStam; B.showLevel=true; }
+  A.groundCount-=qty; if(A.groundCount<=0){ A.ground='none'; A.groundCount=0; delete A.gm; }
   const left=B.gm; moveSrc=null; render(); selTile={r,c}; showCellInfo(r,c); scheduleSave();
-  toast('移动 '+cost+' 格，合并后移动力剩 '+left); }
+  toast('移动 '+(d.ground==='tank'?'坦克':'士兵')+'×'+qty+'，'+cost+' 格，移动力剩 '+left); }
 // 攻击范围：飞机=直线飞越内任意敌/中立；坦克=沿己方territory走到的格的相邻敌/中立；士兵=仅相邻
 function attackTargets(b,ar,ac){
   const A=b[ar][ac], owner=A.owner, set=new Set();
@@ -656,7 +660,20 @@ function closeResult(){ document.getElementById('scrim3').classList.remove('on')
 function openHelp(){ document.getElementById('scrim4').classList.add('on'); document.getElementById('help').classList.add('on'); }
 function closeHelp(){ document.getElementById('scrim4').classList.remove('on'); document.getElementById('help').classList.remove('on'); }
 function showCellInfo(r,c){
-  const d=curBoard()[r][c], box=document.getElementById('cellinfo'); let rows='';
+  const d=curBoard()[r][c], box=document.getElementById('cellinfo');
+  // 移动中：在该源格显示"移动数量"分兵选择器
+  if(moveMode&&moveSrc&&moveSrc.r===r&&moveSrc.c===c){
+    const kn=moveSrc.kind==='air'?'✈️ 飞机':(d.ground==='tank'?'🛡️ 坦克':'👣 士兵');
+    box.innerHTML=`<div class="ci-h">(${r},${c}) 移动数量（分兵）</div>
+      <div class="ci-pick">
+        <button class="ci-b" onclick="moveQty(-1)">−</button>
+        <div class="ci-q"><b>${moveSrc.qty}</b> / ${moveSrc.max}</div>
+        <button class="ci-b" onclick="moveQty(1)">+</button>
+      </div>
+      <div class="ci-foot">${kn} · 移动力 ${moveSrc.stam}<br>点白虚线格移动</div>`;
+    box.classList.add('on'); return;
+  }
+  let rows='';
   if(d.building==='base'&&(d.baseLevel||1)===4) rows+=`<div class="ci-row"><span>⌂ 超级基地</span><b>移动 ${gStam(d)}</b></div>`;
   if(d.ground!=='none'&&d.groundCount>0) rows+=`<div class="ci-row"><span>${d.ground==='tank'?'🛡️ 坦克':'👣 士兵'}×${d.groundCount}</span><b>移动 ${gStam(d)}</b></div>`;
   if(d.hasAir&&d.airCount>0) rows+=`<div class="ci-row"><span>✈️ 飞机×${d.airCount}</span><b>移动 ${aStam(d)}</b></div>`;
