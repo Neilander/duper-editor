@@ -421,11 +421,13 @@ function supportPower(b,r,c,owner){return supportInfo(b,r,c,owner).power;}
 function buildingPower(d){if(d.building==='base')return BUILD_PWR.base[d.baseLevel||1]||6;if(d.building==='fort')return BUILD_PWR.fort;return 0;}
 function keyBuff(dOwner,aOwner){const p=curPlayers()[dOwner-1];if(!p||!p.keys)return 0;return 2*(p.keys[aOwner-1]||0);}
 // 一侧"可被消灭单位"按死亡优先级排序：士兵(1)→在格坦克(2)→飞机(3)→支援坦克(4,最后)
-function battleStacks(d,sup){ const st=[];
+function battleStacks(d,sup,dr,dc){ const st=[];
   if(d.ground==='soldier'&&d.groundCount>0)st.push({k:'soldier',label:'士兵',power:1,count:d.groundCount,self:true});
   if(d.ground==='tank'&&d.groundCount>0)st.push({k:'tank',label:'坦克',power:3,count:d.groundCount,self:true});
   if(d.hasAir&&d.airCount>0)st.push({k:'plane',label:'飞机',power:4,count:d.airCount,self:true});
-  (sup.tiles||[]).forEach(t=>st.push({k:'tank',label:'支援坦克',power:3,count:t.count,self:false,r:t.r,c:t.c}));
+  if(d.building==='fort')st.push({k:'fort',label:'堡垒',power:7,count:1,self:true,r:dr,c:dc});   // 本格部队全死后才死，故排其后
+  (sup.tiles||[]).forEach(t=>{ st.push({k:'tank',label:'支援坦克',power:3,count:t.count,self:false,r:t.r,c:t.c});
+    if(t.fort)st.push({k:'fort',label:'支援堡垒',power:7,count:1,self:false,r:t.r,c:t.c}); });
   return st; }
 function applyDmgStacks(stacks,dmg){ let rem=dmg; for(const s of stacks){ let a=s.count; while(a>0&&rem>=s.power){rem-=s.power;a--;} s.surv=a; } return stacks; }
 function survText(stacks){ const o=(stacks||[]).filter(s=>s.surv>0).map(s=>s.label+'×'+s.surv); return o.length?o.join('，'):'全灭'; }
@@ -444,8 +446,8 @@ function computeBattle(b,ar,ac,dr,dc){
   const dp=onTilePower(D)+bPower+tBuff+kBuff+npc+dSup.power;
   const win=ap>dp;
   let dmg,stacks;
-  if(win){ dmg=dp; stacks=battleStacks(A,aSup); }
-  else   { dmg=Math.max(0,ap-tBuff-kBuff-npc); stacks=battleStacks(D,dSup); }
+  if(win){ dmg=dp; stacks=battleStacks(A,aSup,ar,ac); }
+  else   { dmg=Math.max(0,ap-tBuff-kBuff-npc); stacks=battleStacks(D,dSup,dr,dc); }
   applyDmgStacks(stacks,dmg);
   return {ap,dp,category:win?'win':'fail',win,tBuff,kBuff,npc,bPower,dmg,stacks,aSup,dSup};
 }
@@ -748,26 +750,27 @@ function applyBattle(){
   const b=curBoard();
   const res=computeBattle(b,src.r,src.c,tgt.r,tgt.c);   // 在分支板上重算，stacks 引用分支格
   const A=b[src.r][src.c], D=b[tgt.r][tgt.c];
-  const clr=(d)=>{ d.ground='none'; d.groundCount=0; delete d.gm; d.hasAir=false; d.airCount=0; delete d.am; };
-  const putSupSurv=(s)=>{ const x=b[s.r][s.c]; if(s.surv>0)x.groundCount=s.surv; else {x.ground='none';x.groundCount=0;delete x.gm;} };
-  const putSelfSurv=(d,s)=>{ if(s.surv>0){ if(s.k==='plane'){d.hasAir=true;d.airCount=s.surv;} else {d.ground=s.k;d.groundCount=s.surv;} } };
+  const clrMob=(d)=>{ d.ground='none'; d.groundCount=0; delete d.gm; d.hasAir=false; d.airCount=0; delete d.am; };
+  const clrAll=(d)=>{ clrMob(d); if(d.building==='fort')d.building='none'; };   // 全灭：含堡垒
+  // 应用"胜方"幸存栈：自身部队→selfTile，支援坦克→原格，堡垒→原格(死则拆)
+  const applyStacks=(stacks,selfTile)=>{ stacks.forEach(s=>{
+    if(s.k==='fort'){ const x=b[s.r][s.c]; if(s.surv<=0&&x.building==='fort')x.building='none'; return; }
+    if(s.self){ if(s.surv>0){ if(s.k==='plane'){selfTile.hasAir=true;selfTile.airCount=s.surv;} else {selfTile.ground=s.k;selfTile.groundCount=s.surv;} } }
+    else { const x=b[s.r][s.c]; if(s.surv>0){x.ground=s.k;x.groundCount=s.surv;} else {x.ground='none';x.groundCount=0;delete x.gm;} }
+  }); };
   if(res.category==='win'){
-    // 守方(含支援坦克)全灭
-    clr(D); res.dSup.tiles.forEach(t=>clr(b[t.r][t.c]));
-    // 占领：归属改、敌建筑摧毁
-    D.owner=A.owner; D.showLevel=true; D.building='none'; delete D.centerType; delete D.gm; delete D.am;
-    // 进攻方挨 DP 后：支援坦克幸存留原地、非支援幸存移入 D
-    res.stacks.filter(s=>!s.self).forEach(putSupSurv);
-    res.stacks.filter(s=>s.self).forEach(s=>putSelfSurv(D,s));
-    clr(A);   // 源格可动部队清空（建筑/归属保留）
+    // 守方(主格+支援，含堡垒)全灭
+    clrAll(D); res.dSup.tiles.forEach(t=>clrAll(b[t.r][t.c]));
+    D.owner=A.owner; D.showLevel=true; D.building='none'; delete D.centerType; delete D.gm; delete D.am;  // 占领
+    // 进攻方挨DP后：非支援移入D，支援/堡垒留原地(进攻方堡垒在A)
+    applyStacks(res.stacks, D);
+    clrMob(A);   // 源格可动部队清空(A的堡垒由栈处理)
   } else {
-    // 失败：进攻方(含支援坦克、堡垒)全灭
-    clr(A); if(A.building==='fort')A.building='none';
-    res.aSup.tiles.forEach(t=>clr(b[t.r][t.c]));
-    // 守方挨 (AP-地块-钥匙) 后幸存：自身 + 支援坦克
-    clr(D);
-    res.stacks.filter(s=>s.self).forEach(s=>putSelfSurv(D,s));
-    res.stacks.filter(s=>!s.self).forEach(putSupSurv);
+    // 进攻方(主格含堡垒+支援)全灭
+    clrAll(A); res.aSup.tiles.forEach(t=>clrAll(b[t.r][t.c]));
+    // 守方挨(AP-地块-钥匙)后幸存：自身留D、支援留原地、D上堡垒死则拆
+    clrMob(D);
+    applyStacks(res.stacks, D);
   }
   closeResult();
   const def='攻击('+src.r+','+src.c+')→('+tgt.r+','+tgt.c+') '+(res.category==='win'?'占领':'失败');
