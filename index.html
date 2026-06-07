@@ -497,9 +497,9 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
   if(!moveSrc){
     if(d.owner<1){ toast('选你自己的格子'); return; }
     let kind=null,stam=0,reach=null,desc='';
-    if(d.hasAir&&d.airCount>0){ // 有飞机 → 按飞机范围（含地面时，2+飞机可载走）
+    if(d.hasAir&&d.airCount>0){ // 有飞机 → 按飞机范围选目的地
       kind='air'; stam=aStam(d); reach=airReach(b,r,c,stam); desc='飞机×'+d.airCount;
-      if(d.ground!=='none'&&d.groundCount>0) desc+= (d.airCount>=2?'（载'+(d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount+'同行）':'（仅1飞机，地面兵留下）');
+      if(d.ground!=='none'&&d.groundCount>0) desc+='（'+(d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount+'：目的地它们走得到才随行）';
     } else if(d.ground!=='none'&&d.groundCount>0){ kind='ground'; stam=gStam(d); reach=reachMap(b,r,c,stam); desc=(d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount; }
     if(!kind){ toast('选你的有兵格（地面兵或飞机）'); return; }
     if(stam<=0){ toast('这些单位本回合移动力已用完'); return; }
@@ -514,21 +514,23 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
   if(moveSrc.kind==='air'){
     pushUndo();
     const arrive=aStam(A)-cost;
-    // 2+飞机可载走地面兵；目标已有不同地面兵种则载不过去（地面留下）
-    const canCarry=(A.airCount>=2 && A.ground!=='none' && A.groundCount>0 && (B.ground==='none'||B.ground===A.ground));
+    // 地面兵随行：当且仅当目的地在它们自己走得到的范围内（且兵种可合并）
+    let carried='', gReach=null;
+    if(A.ground!=='none'&&A.groundCount>0) gReach=reachMap(b,moveSrc.r,moveSrc.c,gStam(A));
+    const gcost = gReach? gReach[r+','+c] : null;
+    const groundGoes = (gcost!=null && (B.ground==='none'||B.ground===A.ground));
     if(B.hasAir&&B.airCount>0){ B.airCount+=A.airCount; B.am=Math.min(aStam(B),arrive); }
     else { B.hasAir=true; B.airCount=A.airCount; B.am=arrive; B.showLevel=true; }
     A.hasAir=false; A.airCount=0; delete A.am;
-    let carried='';
-    if(canCarry){
-      const gs=gStam(A);   // 载运不消耗地面移动力
-      if(B.ground===A.ground&&B.groundCount>0){ B.groundCount+=A.groundCount; B.gm=Math.min(gStam(B),gs); }
-      else { B.ground=A.ground; B.groundCount=A.groundCount; B.gm=gs; }
-      carried=' + '+(A.ground==='tank'?'坦克':'士兵')+'×'+A.groundCount;
+    if(groundGoes){
+      const gArr=gStam(A)-gcost;
+      if(B.ground===A.ground&&B.groundCount>0){ B.groundCount+=A.groundCount; B.gm=Math.min(gStam(B),gArr); }
+      else { B.ground=A.ground; B.groundCount=A.groundCount; B.gm=gArr; }
+      carried=' + '+(A.ground==='tank'?'坦克':'士兵')+'×'+A.groundCount+'随行';
       A.ground='none'; A.groundCount=0; delete A.gm;
     }
     const left=B.am; moveSrc=null; render(); scheduleSave();
-    toast('飞机'+carried+' 移动 '+cost+' 格，飞机移动力剩 '+left); return;
+    toast('飞机'+carried+'移动 '+cost+' 格'+(A.ground!=='none'&&!groundGoes?'（地面兵走不到，留下）':'')+'，飞机移动力剩 '+left); return;
   }
   if(B.ground!=='none'&&B.ground!==A.ground){ toast('目标已有不同地面兵种，无法合并'); return; }
   pushUndo();
