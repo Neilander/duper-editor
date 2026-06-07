@@ -478,6 +478,9 @@ function curBoard(){return curNode().board;}
 // 玩家资源（按节点存，分支独立）；老存档/缺失时从 tree.players 或默认迁移
 function curPlayers(){ const n=curNode(); if(!n.players) n.players=clone(tree.players||defaultPlayers());
   n.players.forEach(p=>{ if(p.cards==null)p.cards=0; if(p.coins==null)p.coins=0; }); return n.players; }
+// 资源设置始终改"基础局面(root)"，各分支在分叉时从这继承；绝不改分支自身
+function rootPlayers(){ const n=tree.nodes[tree.rootId]; if(!n.players) n.players=clone(tree.players||defaultPlayers());
+  n.players.forEach(p=>{ if(p.cards==null)p.cards=0; if(p.coins==null)p.coins=0; }); return n.players; }
 // 建造成本：coins 钱、cards 牌数；ctr=需要的中心类型前置
 const BUILD_COST={
   soldier:{coins:1,cards:0,label:'士兵'},
@@ -598,15 +601,15 @@ function doBuild(type,ctype){ const chk=buildCheck(type,ctype); if(!chk.ok){ toa
   selTile={r:R,c:C}; render(); showCellInfo(R,C); renderDrawer(); scheduleSave();
   toast('已建造 '+nm2+'，存为分支'); }
 // ---- 玩家资源设置 ----
-function openResModal(){ const P=curPlayers();
+function openResModal(){ const P=rootPlayers();
   const rows=[1,2,3,4,5].map(o=>{ const p=P[o-1];
     return `<div class="res-row"><span class="res-dot" style="background:${TEAM[o]}"></span><span class="res-nm">${TEAM_NAME[o]}</span>
       <div class="res-grp">💰<button onclick="resAdj(${o},'coins',-1)">−</button><b id="res-c${o}">${p.coins}</b><button onclick="resAdj(${o},'coins',1)">+</button></div>
       <div class="res-grp">🃏<button onclick="resAdj(${o},'cards',-1)">−</button><b id="res-k${o}">${p.cards||0}</b><button onclick="resAdj(${o},'cards',1)">+</button></div></div>`; }).join('');
-  document.getElementById('resmodal').innerHTML=`<div class="handle"></div><h3>玩家资源 <span class="coord">当前局面 · 钱/牌</span></h3>${rows}
+  document.getElementById('resmodal').innerHTML=`<div class="handle"></div><h3>初始资源 <span class="coord">基础局面 · 钱/牌（各分支从这继承）</span></h3>${rows}
     <button class="btn primary" style="width:100%;margin-top:12px" onclick="closeResModal()">完成</button>`;
   document.getElementById('scrim7').classList.add('on'); document.getElementById('resmodal').classList.add('on'); }
-function resAdj(o,k,delta){ const p=curPlayers()[o-1]; p[k]=Math.max(0,(p[k]||0)+delta); document.getElementById('res-'+(k==='coins'?'c':'k')+o).textContent=p[k]; scheduleSave(); }
+function resAdj(o,k,delta){ const p=rootPlayers()[o-1]; p[k]=Math.max(0,(p[k]||0)+delta); document.getElementById('res-'+(k==='coins'?'c':'k')+o).textContent=p[k]; scheduleSave(); }
 function closeResModal(){ document.getElementById('scrim7').classList.remove('on'); document.getElementById('resmodal').classList.remove('on'); render(); }
 function moveQty(delta){ if(!moveSrc)return; moveSrc.qty=Math.max(1,Math.min(moveSrc.max,(moveSrc.qty||moveSrc.max)+delta)); showCellInfo(moveSrc.r,moveSrc.c); }
 function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选有效地块'); return; }
