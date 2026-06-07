@@ -434,7 +434,8 @@ function curBoard(){return curNode().board;}
 function render(){
   const n=curNode(); if(!n)return;
   document.getElementById('t-name').textContent=tree.title||tree.name;
-  document.getElementById('t-cat').textContent=n.label||'局面';
+  const tc=document.getElementById('t-cat'); tc.textContent=n.label||'局面';
+  tc.style.color=(n.category==='root')?'':'var(--gold)'; tc.style.fontWeight=(n.category==='root')?'':'700';
   document.getElementById('t-count').textContent='变化·'+Object.keys(tree.nodes).length;
   const host=document.getElementById('board'); host.style.setProperty('--cols',COLS);
   let h='';
@@ -642,7 +643,8 @@ function renderDrawer(){
   })(tree.rootId,0);
   host.innerHTML=h;
 }
-function gotoNode(id){ selId=id; undoStack=[]; render(); renderDrawer(); closeDrawer(); }
+function gotoNode(id){ selId=id; undoStack=[]; render(); renderDrawer(); closeDrawer();
+  const n=tree.nodes[id]; if(n)toast('已切到「'+n.label+'」'); }
 function renameNode(id,e){ e&&e.stopPropagation(); const n=tree.nodes[id]; const v=prompt('变化名称：',n.label); if(v==null)return; n.label=v.trim()||n.label; render(); renderDrawer(); scheduleSave(); }
 function delNode(id,e){ e&&e.stopPropagation(); const n=tree.nodes[id]; if(!n.parentId)return;
   if(!confirm('删除「'+n.label+'」及其所有子变化？'))return;
