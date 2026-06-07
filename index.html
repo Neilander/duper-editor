@@ -543,7 +543,29 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
     const left=B.am; moveSrc=null; render(); selTile={r,c}; showCellInfo(r,c); scheduleSave();
     toast('飞机'+carried+'移动 '+cost+' 格'+(A.ground!=='none'&&!groundGoes?'（地面兵走不到，留下）':'')+'，飞机移动力剩 '+left); return;
   }
-  if(B.ground!=='none'&&B.ground!==A.ground){ toast('目标已有不同地面兵种，无法合并'); return; }
+  if(B.ground!=='none'&&B.ground!==A.ground){
+    // 目标格有不同地面兵种 → 换位：把对方退到我来路的相邻格（前提它有移动力）
+    if(gStam(B)<=0){ toast('目标格单位没有移动力，无法进入/换位'); return; }
+    let via=null;
+    for(const [nr,nc] of nb(r,c)){
+      if(moveSrc.reach[nr+','+nc]===cost-1){
+        const T=b[nr][nc], isSrc=(nr===moveSrc.r&&nc===moveSrc.c);
+        if(isSrc||T.ground==='none'||T.ground===B.ground){ via={r:nr,c:nc}; break; }
+      }
+    }
+    if(!via){ toast('换位失败：来路上没有能安置对方单位的格'); return; }
+    pushUndo();
+    const Ut=A.ground,Uc=A.groundCount,Ua=gStam(A)-cost;   // 我方
+    const Vt=B.ground,Vc=B.groundCount,Vs=gStam(B);         // 对方（被换）
+    A.ground='none';A.groundCount=0;delete A.gm;            // 源腾空
+    B.ground=Ut;B.groundCount=Uc;B.gm=Ua;B.showLevel=true;  // 我方→B
+    const dst=b[via.r][via.c];                              // 对方→来路格（退1步）
+    if(dst.ground===Vt&&dst.groundCount>0){ dst.groundCount+=Vc; dst.gm=Math.min(gStam(dst),Vs-1); }
+    else { dst.ground=Vt;dst.groundCount=Vc;dst.gm=Vs-1;dst.showLevel=true; }
+    moveSrc=null; render(); selTile={r,c}; showCellInfo(r,c); scheduleSave();
+    toast('换位：'+(Ut==='tank'?'坦克':'士兵')+'×'+Uc+'进('+r+','+c+')，'+(Vt==='tank'?'坦克':'士兵')+'×'+Vc+'退到('+via.r+','+via.c+')');
+    return;
+  }
   pushUndo();
   const arriveStam=gStam(A)-cost;
   if(B.ground===A.ground&&B.groundCount>0){
