@@ -82,13 +82,14 @@
   .tile.base-pos::after{content:"";position:absolute;top:3px;right:3px;width:5px;height:5px;border-radius:50%;
     background:var(--gold);box-shadow:0 0 6px var(--gold);opacity:.8}
   .tile .bld{position:absolute;top:2px;right:5px;font-size:12px;line-height:1}
-  .tile .troops{margin-top:auto;display:flex;flex-wrap:wrap;gap:0 5px;justify-content:center;align-items:flex-end;
-    padding:2px 2px 4px;line-height:1}
-  .tile .u{font-size:11px;font-weight:700;display:flex;align-items:center;gap:1px}
+  .tile .troops{flex:1;display:flex;flex-wrap:wrap;gap:0 5px;justify-content:center;align-items:center;
+    padding:1px 2px;line-height:1;min-height:0}
+  .tile .u{font-size:12px;font-weight:700;display:flex;align-items:center;gap:1px}
   .tile .u i{font-style:normal;font-size:9px;opacity:.85}
   .tile .u.s{color:#dfe7f2} .tile .u.t{color:#ffd9a3} .tile .u.p{color:#bfe3ff}
-  .tile .empty{margin:auto;width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.07)}
-  .tile .dp{position:absolute;bottom:2px;left:3px;font-size:8px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:-.4px;line-height:1}
+  .tile .dot{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.07)}
+  .tile .dp{align-self:stretch;text-align:center;font-size:9px;font-weight:700;color:rgba(255,255,255,.5);
+    line-height:1;padding:1px 0 2px;border-top:1px solid rgba(255,255,255,.05)}
 
   /* tile-level tint for neutral */
   .tile.lvl2{background:linear-gradient(180deg,#141d22,#0f151e)}
@@ -457,7 +458,7 @@ function render(){
     const dp=(d.owner>0)?`<span class="dp">⛨${tileDP(b,r,c)}</span>`:'';
     h+=`<div class="${cls}" onclick="tapTile(${r},${c})">
       <div class="own"></div>${lv}${bld}
-      ${(troops)?`<div class="troops">${troops}</div>`:`<div class="empty"></div>`}${dp}
+      <div class="troops">${troops||'<span class="dot"></span>'}</div>${dp}
     </div>`;
   }
   host.innerHTML=h;
