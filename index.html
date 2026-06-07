@@ -401,9 +401,8 @@ function setCount(cell,u,n){ n=Math.max(0,n|0);
 function tileDP(b,r,c){ const d=b[r][c]; if(!d.enabled)return 0;
   let p=0; if(d.ground!=='none')p+=UNIT[d.ground].p*d.groundCount; if(d.hasAir)p+=UNIT.plane.p*d.airCount;
   if(d.building==='base')p+=BUILD_PWR.base[d.baseLevel||1]||6; else if(d.building==='fort')p+=BUILD_PWR.fort;
-  // adjacent same-owner tank support
-  if(d.owner>0)for(const[nr,nc]of[[r-1,c],[r+1,c],[r,c-1],[r,c+1]]){ if(nr<0||nr>=ROWS||nc<0||nc>=COLS)continue;
-    const t=b[nr][nc]; if(t.enabled&&t.owner===d.owner&&t.ground==='tank'&&t.groundCount>0)p+=UNIT.tank.p*t.groundCount; }
+  // adjacent same-owner tank support (含堡垒内坦克 +7)
+  if(d.owner>0)p+=supportInfo(b,r,c,d.owner).power;
   p+=TILE_BUFF[d.level]||1;
   return p;
 }
@@ -411,36 +410,46 @@ function tileDP(b,r,c){ const d=b[r][c]; if(!d.enabled)return 0;
 // ---------- 战斗结算（AP/DP→死亡优先级扣兵，规则: keystone-rules.md）----------
 const nb=(r,c)=>[[r-1,c],[r+1,c],[r,c-1],[r,c+1]].filter(([a,b])=>a>=0&&a<ROWS&&b>=0&&b<COLS);
 function onTilePower(d){let p=0;if(d.ground!=='none')p+=UNIT[d.ground].p*d.groundCount;if(d.hasAir)p+=UNIT.plane.p*d.airCount;return p;}
-function supportPower(b,r,c,owner){let p=0;for(const[nr,nc]of nb(r,c)){const t=b[nr][nc];if(t.enabled&&t.owner===owner&&t.ground==='tank'&&t.groundCount>0)p+=UNIT.tank.p*t.groundCount;}return p;}
+// 支援：相邻同色"有坦克"的格 → 坦克战力 +(该格有堡垒则+7，堡垒内坦克可支援)
+function supportInfo(b,r,c,owner){ let power=0; const tiles=[];
+  for(const[nr,nc]of nb(r,c)){ const t=b[nr][nc];
+    if(t.enabled&&t.owner===owner&&t.ground==='tank'&&t.groundCount>0){
+      let p=UNIT.tank.p*t.groundCount; if(t.building==='fort')p+=BUILD_PWR.fort;
+      power+=p; tiles.push({r:nr,c:nc,count:t.groundCount,fort:t.building==='fort'}); } }
+  return {power,tiles}; }
+function supportPower(b,r,c,owner){return supportInfo(b,r,c,owner).power;}
 function buildingPower(d){if(d.building==='base')return BUILD_PWR.base[d.baseLevel||1]||6;if(d.building==='fort')return BUILD_PWR.fort;return 0;}
 function keyBuff(dOwner,aOwner){const p=curPlayers()[dOwner-1];if(!p||!p.keys)return 0;return 2*(p.keys[aOwner-1]||0);}
-function defenderStacks(b,dr,dc){const d=b[dr][dc],st=[];
-  if(d.ground==='soldier'&&d.groundCount>0)st.push({label:'士兵',power:1,count:d.groundCount});
-  if(d.ground==='tank'&&d.groundCount>0)st.push({label:'坦克',power:3,count:d.groundCount});
-  if(d.hasAir&&d.airCount>0)st.push({label:'飞机',power:4,count:d.airCount});
-  let sup=0;for(const[nr,nc]of nb(dr,dc)){const t=b[nr][nc];if(t.enabled&&t.owner===d.owner&&t.ground==='tank'&&t.groundCount>0)sup+=t.groundCount;}
-  if(sup>0)st.push({label:'支援坦克',power:3,count:sup});
-  return st;}
-function applyDamage(stacks,dmg){const surv=[];let rem=dmg;for(const s of stacks){let a=s.count;while(a>0&&rem>=s.power){rem-=s.power;a--;}if(a>0)surv.push({label:s.label,count:a});}return surv;}
-function survText(s){return(!s||!s.length)?'守军全灭':s.map(x=>x.label+'×'+x.count).join('，');}
+// 一侧"可被消灭单位"按死亡优先级排序：士兵(1)→在格坦克(2)→飞机(3)→支援坦克(4,最后)
+function battleStacks(d,sup){ const st=[];
+  if(d.ground==='soldier'&&d.groundCount>0)st.push({k:'soldier',label:'士兵',power:1,count:d.groundCount,self:true});
+  if(d.ground==='tank'&&d.groundCount>0)st.push({k:'tank',label:'坦克',power:3,count:d.groundCount,self:true});
+  if(d.hasAir&&d.airCount>0)st.push({k:'plane',label:'飞机',power:4,count:d.airCount,self:true});
+  (sup.tiles||[]).forEach(t=>st.push({k:'tank',label:'支援坦克',power:3,count:t.count,self:false,r:t.r,c:t.c}));
+  return st; }
+function applyDmgStacks(stacks,dmg){ let rem=dmg; for(const s of stacks){ let a=s.count; while(a>0&&rem>=s.power){rem-=s.power;a--;} s.surv=a; } return stacks; }
+function survText(stacks){ const o=(stacks||[]).filter(s=>s.surv>0).map(s=>s.label+'×'+s.surv); return o.length?o.join('，'):'全灭'; }
+// 文档 wiki/combat/battle 模型：AP>DP 占领(守方全灭,进攻方挨DP);否则失败(进攻方全灭,守方挨AP-地块-钥匙);相等→失败
 function computeBattle(b,ar,ac,dr,dc){
   const A=b[ar][ac],D=b[dr][dc];
-  let ap=onTilePower(A)+supportPower(b,ar,ac,A.owner); if(A.building==='fort')ap+=BUILD_PWR.fort;
+  const aSup=supportInfo(b,ar,ac,A.owner);
+  const dSup=(D.owner>0)?supportInfo(b,dr,dc,D.owner):{power:0,tiles:[]};
+  const apFort=(A.building==='fort')?BUILD_PWR.fort:0;
+  const ap=onTilePower(A)+apFort+aSup.power;
   const isNpc=D.owner<=0;
   const tBuff=isNpc?0:(TILE_BUFF[D.level]||1);
   const kBuff=(!isNpc&&A.owner>0)?keyBuff(D.owner,A.owner):0;
   const npc=isNpc?(NPC_DEF[D.level]||1):0;
-  const stacks=defenderStacks(b,dr,dc);
   const bPower=buildingPower(D);
-  const baseDef=tBuff+kBuff+npc;                 // 不可被逐兵扣除的固定防御
-  const dp=stacks.reduce((s,x)=>s+x.power*x.count,0)+bPower+baseDef;
-  let category,survivors=null;
-  if(ap>dp)category='win';
-  else if(ap===dp){category='draw';survivors=applyDamage(stacks,Math.max(0,ap-baseDef));}
-  else{survivors=applyDamage(stacks,Math.max(0,ap-baseDef));category=(stacks.length>0&&survivors.length===0)?'clear':'loss';}
-  return {ap,dp,tBuff,kBuff,bPower,npc,category,survivors};
+  const dp=onTilePower(D)+bPower+tBuff+kBuff+npc+dSup.power;
+  const win=ap>dp;
+  let dmg,stacks;
+  if(win){ dmg=dp; stacks=battleStacks(A,aSup); }
+  else   { dmg=Math.max(0,ap-tBuff-kBuff-npc); stacks=battleStacks(D,dSup); }
+  applyDmgStacks(stacks,dmg);
+  return {ap,dp,category:win?'win':'fail',win,tBuff,kBuff,npc,bPower,dmg,stacks,aSup,dSup};
 }
-const CATR={win:['占领','#46e08c'],draw:['平局','#ffd23a'],clear:['清场','#c79bff'],loss:['失败','#ff5070']};
+const CATR={win:['占领','#46e08c'],fail:['失败','#ff5070']};
 
 // ============================================================
 //  状态（与 analysis.html 同构：tree.nodes + board）
@@ -722,8 +731,8 @@ function showBattleResult(res,a,t){
   document.getElementById('result').innerHTML=`<div class="rcard">
     <div style="display:flex;align-items:center"><span class="rcat" style="color:${col};border-color:${col}">${lab}</span><span class="rvs">进攻 (${a.r},${a.c}) → 目标 (${t.r},${t.c})</span></div>
     <div class="rap"><b style="color:#ffd9a3">AP ${res.ap}</b><span>vs</span><b style="color:#bfe3ff">DP ${res.dp}</b></div>
-    <div class="rdetail">DP 含 ${res.npc?('NPC防御 '+res.npc+' · '):''}地块Buff ${res.tBuff} · 钥匙 ${res.kBuff} · 建筑 ${res.bPower}</div>
-    <div class="rres" style="color:${col}">${res.category==='win'?'✅ 占领目标，进攻方全军移入':'守军剩余：'+survText(res.survivors)}</div>
+    <div class="rdetail">DP含 ${res.npc?('NPC'+res.npc+' · '):''}地块${res.tBuff} · 钥匙${res.kBuff} · 建筑${res.bPower} · 守支援${res.dSup.power}　·　AP含 进攻支援${res.aSup.power}</div>
+    <div class="rres" style="color:${col}">${res.category==='win'?('✅ 占领 · 守方全灭;进攻方挨 '+res.dmg+' 伤,剩 '+survText(res.stacks)):('✖ 失败 · 进攻方全灭;守方挨 '+res.dmg+' 伤,剩 '+survText(res.stacks))}</div>
     <div style="display:flex;gap:8px;margin-top:15px">
       <button class="btn" style="flex:1" onclick="closeResult()">仅预览</button>
       <button class="btn primary" style="flex:1.6" onclick="applyBattle()">⚔ 打这一仗（改棋盘）</button>
@@ -733,35 +742,38 @@ function showBattleResult(res,a,t){
   document.getElementById('result').classList.add('on');
 }
 function applyBattle(){
-  if(!lastBattle)return; const {res,src,tgt}=lastBattle;
-  // 先复制分支并切过去，在分支上结算
+  if(!lastBattle)return; const {src,tgt}=lastBattle;
   const parentId=selId;
   selId=addNode(parentId, clone(curNode().board), '攻击', 'edit', clone(curPlayers())); undoStack=[];
-  const b=curBoard(), A=b[src.r][src.c], D=b[tgt.r][tgt.c];
+  const b=curBoard();
+  const res=computeBattle(b,src.r,src.c,tgt.r,tgt.c);   // 在分支板上重算，stacks 引用分支格
+  const A=b[src.r][src.c], D=b[tgt.r][tgt.c];
+  const clr=(d)=>{ d.ground='none'; d.groundCount=0; delete d.gm; d.hasAir=false; d.airCount=0; delete d.am; };
+  const putSupSurv=(s)=>{ const x=b[s.r][s.c]; if(s.surv>0)x.groundCount=s.surv; else {x.ground='none';x.groundCount=0;delete x.gm;} };
+  const putSelfSurv=(d,s)=>{ if(s.surv>0){ if(s.k==='plane'){d.hasAir=true;d.airCount=s.surv;} else {d.ground=s.k;d.groundCount=s.surv;} } };
   if(res.category==='win'){
-    // 占领：进攻方全军移入，目标改归属、敌建筑被摧毁
-    D.owner=A.owner; D.showLevel=true;
-    D.ground=A.ground; D.groundCount=A.groundCount; D.hasAir=A.hasAir; D.airCount=A.airCount;
-    D.building='none'; delete D.gm; delete D.am;
+    // 守方(含支援坦克)全灭
+    clr(D); res.dSup.tiles.forEach(t=>clr(b[t.r][t.c]));
+    // 占领：归属改、敌建筑摧毁
+    D.owner=A.owner; D.showLevel=true; D.building='none'; delete D.centerType; delete D.gm; delete D.am;
+    // 进攻方挨 DP 后：支援坦克幸存留原地、非支援幸存移入 D
+    res.stacks.filter(s=>!s.self).forEach(putSupSurv);
+    res.stacks.filter(s=>s.self).forEach(s=>putSelfSurv(D,s));
+    clr(A);   // 源格可动部队清空（建筑/归属保留）
   } else {
-    // 未占领：只扣目标格"自身"部队（支援坦克属邻格，不动），按死亡优先级 士→坦→机
-    const baseDef=(res.tBuff||0)+(res.kBuff||0)+(res.npc||0);
-    let rem=Math.max(0, res.ap - baseDef);
-    const own=[];
-    if(D.ground==='soldier'&&D.groundCount>0)own.push({k:'soldier',power:1,count:D.groundCount});
-    if(D.ground==='tank'&&D.groundCount>0)own.push({k:'tank',power:3,count:D.groundCount});
-    if(D.hasAir&&D.airCount>0)own.push({k:'plane',power:4,count:D.airCount});
-    D.ground='none';D.groundCount=0;D.hasAir=false;D.airCount=0;
-    for(const s of own){ let a=s.count; while(a>0&&rem>=s.power){rem-=s.power;a--;}
-      if(a>0){ if(s.k==='plane'){D.hasAir=true;D.airCount=a;} else {D.ground=s.k;D.groundCount=a;} } }
+    // 失败：进攻方(含支援坦克、堡垒)全灭
+    clr(A); if(A.building==='fort')A.building='none';
+    res.aSup.tiles.forEach(t=>clr(b[t.r][t.c]));
+    // 守方挨 (AP-地块-钥匙) 后幸存：自身 + 支援坦克
+    clr(D);
+    res.stacks.filter(s=>s.self).forEach(s=>putSelfSurv(D,s));
+    res.stacks.filter(s=>!s.self).forEach(putSupSurv);
   }
-  // 进攻方 all-in：源格可动部队清空（建筑/归属保留）
-  A.ground='none'; A.groundCount=0; A.hasAir=false; A.airCount=0;
   closeResult();
-  const def='攻击('+src.r+','+src.c+')→('+tgt.r+','+tgt.c+') '+CATR[res.category][0];
+  const def='攻击('+src.r+','+src.c+')→('+tgt.r+','+tgt.c+') '+(res.category==='win'?'占领':'失败');
   const nm=prompt('这一步命名：', def); tree.nodes[selId].label=(nm===null?def:(nm.trim()||def));
   render(); renderDrawer(); scheduleSave();
-  toast(res.category==='win'?('已占领，存为分支「'+tree.nodes[selId].label+'」'):'已结算，存为新分支');
+  toast(res.category==='win'?'已占领,存为分支':'攻击失败,存为分支');
 }
 function closeResult(){ document.getElementById('scrim3').classList.remove('on'); document.getElementById('result').classList.remove('on'); }
 function openHelp(){ document.getElementById('scrim4').classList.add('on'); document.getElementById('help').classList.add('on'); }
