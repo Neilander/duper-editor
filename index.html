@@ -178,7 +178,7 @@
   .tile.mv-src{box-shadow:0 0 0 2px var(--gold),0 0 16px -2px var(--gold);border-color:var(--gold)!important;z-index:2}
   .tile.mv-reach{outline:2.5px dashed rgba(255,255,255,.9);outline-offset:-4px;background:rgba(255,255,255,.08)}
   body.editing #scrim{background:rgba(4,7,11,.28)}   /* 编辑时减淡遮罩，实时看到改动 */
-  .cellinfo{position:fixed;top:64px;right:10px;z-index:60;min-width:128px;background:rgba(16,22,30,.96);
+  .cellinfo{position:fixed;top:184px;right:8px;z-index:60;min-width:132px;background:rgba(16,22,30,.97);
     border:1px solid var(--line2);border-radius:12px;padding:8px 10px;box-shadow:0 8px 24px rgba(0,0,0,.45);
     opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .15s,transform .15s}
   .cellinfo.on{opacity:1;transform:none}
@@ -494,7 +494,8 @@ function renderScore(){
 // ============================================================
 //  点击地块 → 底部编辑面板
 // ============================================================
-function tapTile(r,c){ if(attackMode){ attackTap(r,c); return; } if(moveMode){ moveTap(r,c); return; } selTile={r,c}; openSheet(); }
+function tapTile(r,c){ selTile={r,c}; showCellInfo(r,c);   // 常驻显示该格移动力（任何模式）
+  if(attackMode){ attackTap(r,c); return; } if(moveMode){ moveTap(r,c); return; } openSheet(); }
 function toggleAttack(){ attackMode=!attackMode; atkTile=null;
   if(attackMode){ moveMode=false; moveSrc=null; document.getElementById('mv-btn').classList.remove('on'); }
   document.getElementById('atk-btn').classList.toggle('on',attackMode);
@@ -539,7 +540,7 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
       carried=' + '+(A.ground==='tank'?'坦克':'士兵')+'×'+A.groundCount+'随行';
       A.ground='none'; A.groundCount=0; delete A.gm;
     }
-    const left=B.am; moveSrc=null; render(); scheduleSave();
+    const left=B.am; moveSrc=null; render(); selTile={r,c}; showCellInfo(r,c); scheduleSave();
     toast('飞机'+carried+'移动 '+cost+' 格'+(A.ground!=='none'&&!groundGoes?'（地面兵走不到，留下）':'')+'，飞机移动力剩 '+left); return;
   }
   if(B.ground!=='none'&&B.ground!==A.ground){ toast('目标已有不同地面兵种，无法合并'); return; }
@@ -552,7 +553,7 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
     B.ground=A.ground; B.groundCount=A.groundCount; B.gm=arriveStam; B.showLevel=true;
   }
   A.ground='none'; A.groundCount=0; delete A.gm;
-  const left=B.gm; moveSrc=null; render(); scheduleSave();
+  const left=B.gm; moveSrc=null; render(); selTile={r,c}; showCellInfo(r,c); scheduleSave();
   toast('移动 '+cost+' 格，合并后移动力剩 '+left); }
 // 攻击范围：飞机=直线飞越内任意敌/中立；坦克=沿己方territory走到的格的相邻敌/中立；士兵=仅相邻
 function attackTargets(b,ar,ac){
@@ -672,7 +673,7 @@ function openSheet(){
   document.getElementById('scrim').classList.add('on');
   document.getElementById('sheet').classList.add('on');
 }
-function closeSheet(){ document.body.classList.remove('editing'); hideCellInfo(); document.getElementById('scrim').classList.remove('on'); document.getElementById('sheet').classList.remove('on'); render(); scheduleSave(); }
+function closeSheet(){ document.body.classList.remove('editing'); document.getElementById('scrim').classList.remove('on'); document.getElementById('sheet').classList.remove('on'); render(); scheduleSave(); }
 function refreshDP(){ const {r,c}=selTile; document.getElementById('s-dp').textContent=tileDP(curBoard(),r,c); }
 
 function pushUndo(){ undoStack.push(clone(curBoard())); if(undoStack.length>40)undoStack.shift(); }
