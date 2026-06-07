@@ -452,7 +452,7 @@ function render(){
     let cls='tile'; if(d.owner>0)cls+=' t'+d.owner; if(d.owner===0&&d.level>1)cls+=' lvl'+d.level;
     if(isBase(r,c))cls+=' base-pos';
     if(attackMode&&atkTile){ if(atkTile.r===r&&atkTile.c===c)cls+=' atk-src';
-      else if(nb(atkTile.r,atkTile.c).some(([a2,b2])=>a2===r&&b2===c)&&d.owner!==b[atkTile.r][atkTile.c].owner)cls+=' atk-tgt'; }
+      else if(atkTile.targets&&atkTile.targets.has(r+','+c))cls+=' atk-tgt'; }
     if(moveMode&&moveSrc){ if(moveSrc.r===r&&moveSrc.c===c)cls+=' mv-src';
       else if(moveSrc.reach[r+','+c]!=null)cls+=' mv-reach'; }
     let troops='';
@@ -497,8 +497,10 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
   if(!moveSrc){
     if(d.owner<1){ toast('选你自己的格子'); return; }
     let kind=null,stam=0,reach=null,desc='';
-    if(d.ground!=='none'&&d.groundCount>0){ kind='ground'; stam=gStam(d); reach=reachMap(b,r,c,stam); desc=(d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount; }
-    else if(d.hasAir&&d.airCount>0){ kind='air'; stam=aStam(d); reach=airReach(b,r,c,stam); desc='飞机×'+d.airCount; }
+    if(d.hasAir&&d.airCount>0){ // 有飞机 → 按飞机范围（含地面时，2+飞机可载走）
+      kind='air'; stam=aStam(d); reach=airReach(b,r,c,stam); desc='飞机×'+d.airCount;
+      if(d.ground!=='none'&&d.groundCount>0) desc+= (d.airCount>=2?'（载'+(d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount+'同行）':'（仅1飞机，地面兵留下）');
+    } else if(d.ground!=='none'&&d.groundCount>0){ kind='ground'; stam=gStam(d); reach=reachMap(b,r,c,stam); desc=(d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount; }
     if(!kind){ toast('选你的有兵格（地面兵或飞机）'); return; }
     if(stam<=0){ toast('这些单位本回合移动力已用完'); return; }
     moveSrc={r,c,kind,stam,reach};
@@ -512,11 +514,21 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
   if(moveSrc.kind==='air'){
     pushUndo();
     const arrive=aStam(A)-cost;
+    // 2+飞机可载走地面兵；目标已有不同地面兵种则载不过去（地面留下）
+    const canCarry=(A.airCount>=2 && A.ground!=='none' && A.groundCount>0 && (B.ground==='none'||B.ground===A.ground));
     if(B.hasAir&&B.airCount>0){ B.airCount+=A.airCount; B.am=Math.min(aStam(B),arrive); }
     else { B.hasAir=true; B.airCount=A.airCount; B.am=arrive; B.showLevel=true; }
     A.hasAir=false; A.airCount=0; delete A.am;
+    let carried='';
+    if(canCarry){
+      const gs=gStam(A);   // 载运不消耗地面移动力
+      if(B.ground===A.ground&&B.groundCount>0){ B.groundCount+=A.groundCount; B.gm=Math.min(gStam(B),gs); }
+      else { B.ground=A.ground; B.groundCount=A.groundCount; B.gm=gs; }
+      carried=' + '+(A.ground==='tank'?'坦克':'士兵')+'×'+A.groundCount;
+      A.ground='none'; A.groundCount=0; delete A.gm;
+    }
     const left=B.am; moveSrc=null; render(); scheduleSave();
-    toast('飞机移动 '+cost+' 格，合并后移动力剩 '+left); return;
+    toast('飞机'+carried+' 移动 '+cost+' 格，飞机移动力剩 '+left); return;
   }
   if(B.ground!=='none'&&B.ground!==A.ground){ toast('目标已有不同地面兵种，无法合并'); return; }
   pushUndo();
@@ -530,13 +542,36 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
   A.ground='none'; A.groundCount=0; delete A.gm;
   const left=B.gm; moveSrc=null; render(); scheduleSave();
   toast('移动 '+cost+' 格，合并后移动力剩 '+left); }
+// 攻击范围：飞机=直线飞越内任意敌/中立；坦克=沿己方territory走到的格的相邻敌/中立；士兵=仅相邻
+function attackTargets(b,ar,ac){
+  const A=b[ar][ac], owner=A.owner, set=new Set();
+  const addEnemy=(r,c)=>{ if(r<0||r>=ROWS||c<0||c>=COLS)return; const t=b[r][c]; if(t.enabled&&t.owner!==owner)set.add(r+','+c); };
+  if(A.hasAir&&A.airCount>0){
+    const bud=aStam(A);
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){ if((Math.abs(r-ar)+Math.abs(c-ac))<=bud)addEnemy(r,c); }
+  } else if(A.ground==='tank'&&A.groundCount>0){
+    const reach=reachMap(b,ar,ac,gStam(A));
+    Object.keys(reach).forEach(k=>{ const [r,c]=k.split(',').map(Number); for(const[nr,nc]of nb(r,c))addEnemy(nr,nc); });
+  } else {
+    for(const[nr,nc]of nb(ar,ac))addEnemy(nr,nc);
+  }
+  set.delete(ar+','+ac);
+  return set;
+}
 function attackTap(r,c){
   const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选有效地块'); return; }
-  if(!atkTile){ if(d.owner<1||onTilePower(d)<=0){ toast('进攻方需是你的有兵地块'); return; } atkTile={r,c}; render(); toast('再点相邻敌方/中立目标'); return; }
+  if(!atkTile){
+    if(d.owner<1||onTilePower(d)<=0){ toast('进攻方需是你的有兵地块'); return; }
+    const targets=attackTargets(b,r,c);
+    atkTile={r,c,targets};
+    render();
+    const reachHint = (d.hasAir&&d.airCount>0)?'飞机可飞越，范围'+aStam(d):(d.ground==='tank'&&d.groundCount>0)?'坦克沿territory可达':'仅相邻';
+    toast(targets.size?('点高亮的敌方/中立目标（'+reachHint+'）'):'该单位攻击范围内没有目标');
+    return;
+  }
   if(atkTile.r===r&&atkTile.c===c){ atkTile=null; render(); return; }
-  if(!nb(atkTile.r,atkTile.c).some(([nr,nc])=>nr===r&&nc===c)){ toast('目标须与进攻地块相邻'); return; }
-  if(d.owner===b[atkTile.r][atkTile.c].owner){ toast('目标须是敌方/中立地块'); return; }
-  const src=atkTile; const res=computeBattle(b,src.r,src.c,r,c);
+  if(!atkTile.targets.has(r+','+c)){ toast('目标不在该单位的攻击范围内'); return; }
+  const src={r:atkTile.r,c:atkTile.c}; const res=computeBattle(b,src.r,src.c,r,c);
   atkTile=null; render(); showBattleResult(res,src,{r,c});
 }
 let lastBattle=null;
@@ -637,7 +672,7 @@ function undoLast(){ if(!undoStack.length)return; curNode().board=undoStack.pop(
 function forkVariation(){
   const parent=curNode();
   const id=addNode(parent.id, clone(parent.board), '变化 '+(parent.children.length+1), 'edit');
-  selId=id; undoStack=[]; render(); scheduleSave(); renderDrawer();
+  selId=id; undoStack=[]; clearActionState(); render(); scheduleSave(); renderDrawer();
   toast('已基于当前复制出新变化 → 开始编辑');
 }
 
@@ -661,7 +696,11 @@ function renderDrawer(){
   })(tree.rootId,0);
   host.innerHTML=h;
 }
-function gotoNode(id){ selId=id; undoStack=[]; render(); renderDrawer(); closeDrawer();
+function clearActionState(){ attackMode=false; atkTile=null; moveMode=false; moveSrc=null;
+  const a=document.getElementById('atk-btn'), m=document.getElementById('mv-btn');
+  if(a)a.classList.remove('on'); if(m)m.classList.remove('on'); }
+function gotoNode(id){ selId=id; undoStack=[]; clearActionState();
+  render(); renderDrawer(); closeDrawer();
   const n=tree.nodes[id]; if(n)toast('已切到「'+n.label+'」'); }
 function renameNode(id,e){ e&&e.stopPropagation(); const n=tree.nodes[id]; const v=prompt('变化名称：',n.label); if(v==null)return; n.label=v.trim()||n.label; render(); renderDrawer(); scheduleSave(); }
 function delNode(id,e){ e&&e.stopPropagation(); const n=tree.nodes[id]; if(!n.parentId)return;
