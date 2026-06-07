@@ -375,6 +375,7 @@ const BUILD_PWR={base:{1:6,2:10,3:15,4:18},fort:7,center:0};
 const TILE_BUFF={1:1,2:2,3:4};
 const NPC_DEF={1:1,2:2,3:4};   // 中立NPC防御（Lv3 实为3-6，取代表值4）
 const BLD_ICON={none:'',base:'⌂',fort:'▣',center:'✦'};
+const CTSHORT={economy:'经',plane:'机',fort:'堡'};
 const isBase=(r,c)=>BASE_POS.has(r+','+c);
 
 // ---------- cell / board ----------
@@ -516,7 +517,7 @@ function render(){
     if(sc)troops+=`<span class="u s">${sc}<i>👣</i></span>`;
     if(tc)troops+=`<span class="u t">${tc}<i>🛡️</i></span>`;
     if(pc)troops+=`<span class="u p">${pc}<i>✈️</i></span>`;
-    const bld=d.building!=='none'?`<span class="bld">${BLD_ICON[d.building]}${d.building==='base'?`<sub style="font-size:7px">${d.baseLevel}</sub>`:''}</span>`:'';
+    const bld=d.building!=='none'?`<span class="bld">${BLD_ICON[d.building]}${d.building==='base'?`<sub style="font-size:7px">${d.baseLevel}</sub>`:(d.building==='center'&&d.centerType)?`<sub style="font-size:7px">${CTSHORT[d.centerType]||''}</sub>`:''}</span>`:'';
     const lv=(d.owner>0||d.level>1)?`<span class="lv">L${d.level}</span>`:'';
     const dp=(d.owner>0)?`<span class="dp">⛨${tileDP(b,r,c)}</span>`:'';
     h+=`<div class="${cls}" onclick="tapTile(${r},${c})">
@@ -812,6 +813,8 @@ function openSheet(){
   const blv=document.getElementById('s-baselv');
   if(d.building==='base'){ blv.style.display='flex';
     blv.innerHTML=[1,2,3,4].map(l=>`<button class="chip ${d.baseLevel===l?'on':''}" onclick="setBaseLv(${l})">基${l}<i style="font-style:normal;color:var(--dim);font-size:10px;margin-left:3px">${BUILD_PWR.base[l]}</i></button>`).join('');
+  } else if(d.building==='center'){ blv.style.display='flex';
+    blv.innerHTML=[['economy','经济'],['plane','飞机'],['fort','堡垒']].map(([k,nm])=>`<button class="chip ${(d.centerType||'economy')===k?'on':''}" onclick="setCenterType('${k}')">✦ ${nm}</button>`).join('');
   } else blv.style.display='none';
   refreshDP();
   document.getElementById('scrim').classList.add('on');
@@ -827,8 +830,9 @@ function setEnabled(v){ pushUndo(); const d=curBoard()[selTile.r][selTile.c]; d.
   openSheet(); render(); scheduleSave(); }
 function setOwner(o){ edit(d=>{ d.owner=o; if(o>0&&!d.showLevel)d.showLevel=true; }); }
 function setLevel(l){ edit(d=>{ d.level=l; d.showLevel=true; }); }
-function setBuild(k){ edit(d=>{ d.building=k; if(k==='base'&&!d.baseLevel)d.baseLevel=1; }); }
+function setBuild(k){ edit(d=>{ d.building=k; if(k==='base'&&!d.baseLevel)d.baseLevel=1; if(k==='center'&&!d.centerType)d.centerType='economy'; }); }
 function setBaseLv(l){ edit(d=>{ d.baseLevel=l; }); }
+function setCenterType(t){ edit(d=>{ d.centerType=t; }); }
 function bump(u,delta){ pushUndo(); const d=curBoard()[selTile.r][selTile.c]; setCount(d,u,getCount(d,u)+delta);
   ['soldier','tank','plane'].forEach(x=>document.getElementById('v-'+x).textContent=getCount(d,x)); refreshDP(); showCellInfo(selTile.r,selTile.c); render(); scheduleSave(); }
 function undoLast(){ if(!undoStack.length)return; curNode().board=undoStack.pop(); render(); scheduleSave(); toast('已撤销'); }
