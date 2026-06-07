@@ -191,6 +191,22 @@
   .cellinfo .ci-b:active{background:#26303d}
   .cellinfo .ci-q{font-size:15px;color:var(--ink);min-width:48px;text-align:center} .cellinfo .ci-q b{color:var(--gold);font-size:19px;font-weight:800}
   .cellinfo .ci-foot{font-size:10.5px;color:var(--dim);line-height:1.5;margin-top:2px}
+  #bd-btn.on{background:linear-gradient(145deg,#3a2a10,#231807);border-color:var(--gold);color:var(--gold)}
+  .bm-list{display:flex;flex-direction:column;gap:7px;margin-top:6px}
+  .bm-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 13px;border-radius:11px;
+    border:1px solid var(--line2);background:#161d27;color:var(--ink);font-size:15px;font-weight:600;cursor:pointer}
+  .bm-item:active{background:#1d2630}
+  .bm-item.off{opacity:.5;cursor:not-allowed;background:#11161d}
+  .bm-item .bm-n{flex:0 0 auto}
+  .bm-item .bm-c{margin-left:auto;font-size:12.5px;color:var(--gold);font-weight:700;white-space:nowrap}
+  .bm-item.off .bm-c{color:var(--dim2)}
+  .bm-item .bm-x{font-size:11px;color:var(--danger);font-weight:500;white-space:nowrap}
+  .res-row{display:flex;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid var(--line)}
+  .res-dot{width:14px;height:14px;border-radius:50%;flex:0 0 auto}
+  .res-nm{width:28px;font-size:14px;font-weight:700;color:var(--ink)}
+  .res-grp{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--dim)}
+  .res-grp button{width:30px;height:30px;border-radius:8px;border:1px solid var(--line2);background:#1b2430;color:var(--ink);font-size:17px;font-weight:700;cursor:pointer}
+  .res-grp b{min-width:22px;text-align:center;color:var(--gold);font-size:15px}
 
   /* attack result card */
   .result{position:fixed;left:0;right:0;bottom:0;z-index:55;transform:translateY(112%);transition:transform .3s var(--sheet-ease);
@@ -228,10 +244,11 @@
 </div>
 
 <div class="dock">
-  <button class="btn" style="flex:0 0 64px;font-size:12.5px;gap:3px" onclick="toggleMove()" id="mv-btn">🦶移动</button>
-  <button class="btn" style="flex:0 0 64px;font-size:12.5px;gap:3px" onclick="toggleAttack()" id="atk-btn">⚔攻击</button>
-  <button class="btn grow primary" onclick="forkVariation()">⎘ 复制分叉</button>
-  <button class="btn" style="flex:0 0 44px" onclick="undoLast()" id="undo-btn">↶</button>
+  <button class="btn" style="flex:0 0 56px;font-size:11.5px;gap:2px" onclick="toggleMove()" id="mv-btn">🦶移动</button>
+  <button class="btn" style="flex:0 0 56px;font-size:11.5px;gap:2px" onclick="toggleAttack()" id="atk-btn">⚔攻击</button>
+  <button class="btn" style="flex:0 0 56px;font-size:11.5px;gap:2px" onclick="toggleBuild()" id="bd-btn">🔨建造</button>
+  <button class="btn grow primary" onclick="forkVariation()">⎘ 分叉</button>
+  <button class="btn" style="flex:0 0 42px" onclick="undoLast()" id="undo-btn">↶</button>
 </div>
 
 <!-- tile editor sheet -->
@@ -290,6 +307,7 @@
     地图形状
     <button class="iconbtn" style="height:32px;font-size:12px" onclick="applyPreset('满版')">满版</button>
     <button class="iconbtn" style="height:32px;font-size:12px" onclick="applyPreset('八边形')">八边形</button>
+    <button class="iconbtn" style="height:32px;font-size:12px;margin-left:auto" onclick="closeDrawer();openResModal()">💰 玩家资源</button>
   </div>
   <div class="df">
     <select id="arch-sel" onchange="switchArchive(this.value)" class="btn" style="flex:1;text-align-last:center"></select>
@@ -330,6 +348,14 @@
     <button class="btn primary" style="flex:2" onclick="doImportText()">导入为当前局面</button>
   </div>
 </div>
+
+<!-- build menu -->
+<div class="scrim" id="scrim6" onclick="closeBuildMenu()"></div>
+<div class="sheet" id="buildmenu"></div>
+
+<!-- player resources -->
+<div class="scrim" id="scrim7" onclick="closeResModal()"></div>
+<div class="sheet" id="resmodal"></div>
 
 <div class="toast" id="toast"></div>
 
@@ -386,7 +412,7 @@ const nb=(r,c)=>[[r-1,c],[r+1,c],[r,c-1],[r,c+1]].filter(([a,b])=>a>=0&&a<ROWS&&
 function onTilePower(d){let p=0;if(d.ground!=='none')p+=UNIT[d.ground].p*d.groundCount;if(d.hasAir)p+=UNIT.plane.p*d.airCount;return p;}
 function supportPower(b,r,c,owner){let p=0;for(const[nr,nc]of nb(r,c)){const t=b[nr][nc];if(t.enabled&&t.owner===owner&&t.ground==='tank'&&t.groundCount>0)p+=UNIT.tank.p*t.groundCount;}return p;}
 function buildingPower(d){if(d.building==='base')return BUILD_PWR.base[d.baseLevel||1]||6;if(d.building==='fort')return BUILD_PWR.fort;return 0;}
-function keyBuff(dOwner,aOwner){const p=tree.players&&tree.players[dOwner-1];if(!p||!p.keys)return 0;return 2*(p.keys[aOwner-1]||0);}
+function keyBuff(dOwner,aOwner){const p=curPlayers()[dOwner-1];if(!p||!p.keys)return 0;return 2*(p.keys[aOwner-1]||0);}
 function defenderStacks(b,dr,dc){const d=b[dr][dc],st=[];
   if(d.ground==='soldier'&&d.groundCount>0)st.push({label:'士兵',power:1,count:d.groundCount});
   if(d.ground==='tank'&&d.groundCount>0)st.push({label:'坦克',power:3,count:d.groundCount});
@@ -421,6 +447,7 @@ const CATR={win:['占领','#46e08c'],draw:['平局','#ffd23a'],clear:['清场','
 let tree=null, selId=null, uid=1, selTile=null, undoStack=[];
 let attackMode=false, atkTile=null;
 let moveMode=false, moveSrc=null;
+let buildMode=false, buildTile=null;
 // 地面兵的剩余移动力（gm 未设则视为满）；基地Lv4 当地面单位算
 function fullMove(d){ if(d.building==='base'&&(d.baseLevel||1)===4)return 5; return MOVE[d.ground]||0; }
 function gStam(d){ return (d.gm!=null)?d.gm:fullMove(d); }
@@ -438,16 +465,27 @@ function airReach(b,sr,sc,budget){ const owner=b[sr][sc].owner, m={};
     const dd=Math.abs(r-sr)+Math.abs(c-sc); if(dd<=budget)m[r+','+c]=dd; }
   return m; }
 function newId(){return 'n'+(uid++);}
-function defaultPlayers(){return [0,1,2,3,4].map(i=>({coins:0,ap:2,apCap:i===0?3:2,hand:[],keys:[0,0,0,0,0]}));}
+function defaultPlayers(){return [0,1,2,3,4].map(i=>({coins:i===0?3:2,cards:0,ap:2,apCap:i===0?3:2,hand:[],keys:[0,0,0,0,0]}));}
 function emptyTree(name){return {name,title:name,players:defaultPlayers(),rootId:null,nodes:{}};}
-function addNode(parentId,board,label,category){
+function addNode(parentId,board,label,category,players){
   const id=newId();
-  tree.nodes[id]={id,parentId,children:[],board,op:null,category:category||'root',cost:0,note:'',label:label||(category==='root'?'基础局面':'新变化')};
+  tree.nodes[id]={id,parentId,children:[],board,players:players||defaultPlayers(),op:null,category:category||'root',cost:0,note:'',label:label||(category==='root'?'基础局面':'新变化')};
   if(parentId&&tree.nodes[parentId])tree.nodes[parentId].children.push(id);
   return id;
 }
 function curNode(){return tree.nodes[selId];}
 function curBoard(){return curNode().board;}
+// 玩家资源（按节点存，分支独立）；老存档/缺失时从 tree.players 或默认迁移
+function curPlayers(){ const n=curNode(); if(!n.players) n.players=clone(tree.players||defaultPlayers());
+  n.players.forEach(p=>{ if(p.cards==null)p.cards=0; if(p.coins==null)p.coins=0; }); return n.players; }
+// 建造成本：coins 钱、cards 牌数；ctr=需要的中心类型前置
+const BUILD_COST={
+  soldier:{coins:1,cards:0,label:'士兵'},
+  tank:{coins:1,cards:2,label:'坦克'},
+  plane:{coins:3,cards:3,label:'飞机',ctr:'plane'},
+  fort:{coins:3,cards:3,label:'炮塔',ctr:'fort'},
+  center:{coins:0,cards:3,label:'中心'}
+};
 
 // ============================================================
 //  渲染：棋盘
@@ -500,15 +538,76 @@ function renderScore(){
 //  点击地块 → 底部编辑面板
 // ============================================================
 function tapTile(r,c){ selTile={r,c}; showCellInfo(r,c);   // 常驻显示该格移动力（任何模式）
+  if(buildMode){ buildTap(r,c); return; }
   if(attackMode){ attackTap(r,c); return; } if(moveMode){ moveTap(r,c); return; } openSheet(); }
 function toggleAttack(){ attackMode=!attackMode; atkTile=null;
-  if(attackMode){ moveMode=false; moveSrc=null; document.getElementById('mv-btn').classList.remove('on'); }
+  if(attackMode){ moveMode=false; moveSrc=null; buildMode=false; document.getElementById('mv-btn').classList.remove('on'); document.getElementById('bd-btn').classList.remove('on'); }
   document.getElementById('atk-btn').classList.toggle('on',attackMode);
   render(); toast(attackMode?'⚔ 攻击预览：先点你的进攻格 → 再点相邻敌方目标':'已退出攻击预览'); }
 function toggleMove(){ moveMode=!moveMode; moveSrc=null;
-  if(moveMode){ attackMode=false; atkTile=null; document.getElementById('atk-btn').classList.remove('on'); }
+  if(moveMode){ attackMode=false; atkTile=null; buildMode=false; document.getElementById('atk-btn').classList.remove('on'); document.getElementById('bd-btn').classList.remove('on'); }
   document.getElementById('mv-btn').classList.toggle('on',moveMode);
   render(); toast(moveMode?'🦶 移动：点你的地面兵/飞机 → 点己方可达格（同兵种合并，移动力取最低；飞机可飞越）':'已退出移动'); }
+function toggleBuild(){ buildMode=!buildMode;
+  if(buildMode){ attackMode=false; atkTile=null; moveMode=false; moveSrc=null; document.getElementById('atk-btn').classList.remove('on'); document.getElementById('mv-btn').classList.remove('on'); }
+  document.getElementById('bd-btn').classList.toggle('on',buildMode);
+  render(); toast(buildMode?'🔨 建造：点你的地块，选要造的单位（扣钱牌、生成分支）':'已退出建造'); }
+function buildTap(r,c){ const d=curBoard()[r][c]; if(!d.enabled){ toast('选有效地块'); return; }
+  if(d.owner<1){ toast('在你自己的地块上建造'); return; }
+  buildTile={r,c}; openBuildMenu(r,c); }
+function playerHasCenter(b,owner,type){ for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const t=b[r][c]; if(t.enabled&&t.owner===owner&&t.building==='center'&&t.centerType===type)return true;} return false; }
+function buildCheck(type,ctype){ const {r,c}=buildTile, b=curBoard(), d=b[r][c], owner=d.owner, P=curPlayers()[owner-1], cost=BUILD_COST[type];
+  if(P.coins<cost.coins) return {ok:false,reason:'钱不够(需'+cost.coins+')'};
+  if((P.cards||0)<cost.cards) return {ok:false,reason:'牌不够(需'+cost.cards+')'};
+  const bl=d.baseLevel||1;
+  if((type==='tank'||type==='plane')&&!(d.building==='base'&&bl>=1&&bl<=3)) return {ok:false,reason:'需在你的基地Lv1-3上'};
+  if(type==='plane'&&!playerHasCenter(b,owner,'plane')) return {ok:false,reason:'需先有飞机中心'};
+  if(type==='fort'&&!playerHasCenter(b,owner,'fort')) return {ok:false,reason:'需先有堡垒中心'};
+  if(type==='soldier'&&d.ground==='tank'&&d.groundCount>0) return {ok:false,reason:'该格已有坦克'};
+  if(type==='tank'&&d.ground==='soldier'&&d.groundCount>0) return {ok:false,reason:'该格已有士兵'};
+  if((type==='fort'||type==='center')&&d.building!=='none') return {ok:false,reason:'该格已有建筑'};
+  return {ok:true}; }
+const CTNAME={economy:'经济',plane:'飞机',fort:'堡垒'};
+function openBuildMenu(r,c){ buildTile={r,c}; const d=curBoard()[r][c], P=curPlayers()[d.owner-1];
+  const items=[['soldier'],['tank'],['plane'],['fort'],['center','economy'],['center','plane'],['center','fort']];
+  const rows=items.map(([t,ct])=>{ const chk=buildCheck(t,ct), cost=BUILD_COST[t];
+    const nm=(t==='center')?('中心·'+CTNAME[ct]):cost.label;
+    const cs=((cost.coins?cost.coins+'币':'')+(cost.coins&&cost.cards?' + ':'')+(cost.cards?cost.cards+'牌':''))||'免费';
+    return `<button class="bm-item${chk.ok?'':' off'}" ${chk.ok?`onclick="doBuild('${t}',${ct?`'${ct}'`:'null'})"`:''}>
+      <span class="bm-n">${nm}</span><span class="bm-c">${cs}</span>${chk.ok?'':`<span class="bm-x">${chk.reason}</span>`}</button>`; }).join('');
+  document.getElementById('buildmenu').innerHTML=`<div class="handle"></div>
+    <h3>建造 <span class="coord">(${r},${c}) · ${TEAM_NAME[d.owner]} · 💰${P.coins} · 🃏${P.cards||0}</span></h3>
+    <div class="bm-list">${rows}</div>
+    <button class="btn" style="width:100%;margin-top:10px" onclick="closeBuildMenu()">取消</button>`;
+  document.getElementById('scrim6').classList.add('on'); document.getElementById('buildmenu').classList.add('on'); }
+function closeBuildMenu(){ document.getElementById('scrim6').classList.remove('on'); document.getElementById('buildmenu').classList.remove('on'); }
+function doBuild(type,ctype){ const chk=buildCheck(type,ctype); if(!chk.ok){ toast('建不了：'+chk.reason); return; }
+  closeBuildMenu();
+  const parentId=selId;
+  selId=addNode(parentId, clone(curNode().board), '建造', 'edit', clone(curPlayers())); undoStack=[];
+  const R=buildTile.r,C=buildTile.c, d=curBoard()[R][C], P=curPlayers()[d.owner-1], cost=BUILD_COST[type];
+  P.coins-=cost.coins; P.cards=(P.cards||0)-cost.cards; d.showLevel=true;
+  let nm2='';
+  if(type==='soldier'){ if(d.ground!=='soldier'){d.ground='soldier';d.groundCount=0;} d.groundCount++; delete d.gm; nm2='士兵'; }
+  else if(type==='tank'){ if(d.ground!=='tank'){d.ground='tank';d.groundCount=0;} d.groundCount++; delete d.gm; nm2='坦克'; }
+  else if(type==='plane'){ d.hasAir=true; d.airCount=(d.airCount||0)+1; delete d.am; nm2='飞机'; }
+  else if(type==='fort'){ d.building='fort'; nm2='炮塔'; }
+  else if(type==='center'){ d.building='center'; d.centerType=ctype; nm2='中心·'+CTNAME[ctype]; }
+  const def='建造 '+nm2+'→('+R+','+C+')';
+  const nm=prompt('这一步命名：', def); curNode().label=(nm===null?def:(nm.trim()||def));
+  selTile={r:R,c:C}; render(); showCellInfo(R,C); renderDrawer(); scheduleSave();
+  toast('已建造 '+nm2+'，存为分支'); }
+// ---- 玩家资源设置 ----
+function openResModal(){ const P=curPlayers();
+  const rows=[1,2,3,4,5].map(o=>{ const p=P[o-1];
+    return `<div class="res-row"><span class="res-dot" style="background:${TEAM[o]}"></span><span class="res-nm">${TEAM_NAME[o]}</span>
+      <div class="res-grp">💰<button onclick="resAdj(${o},'coins',-1)">−</button><b id="res-c${o}">${p.coins}</b><button onclick="resAdj(${o},'coins',1)">+</button></div>
+      <div class="res-grp">🃏<button onclick="resAdj(${o},'cards',-1)">−</button><b id="res-k${o}">${p.cards||0}</b><button onclick="resAdj(${o},'cards',1)">+</button></div></div>`; }).join('');
+  document.getElementById('resmodal').innerHTML=`<div class="handle"></div><h3>玩家资源 <span class="coord">当前局面 · 钱/牌</span></h3>${rows}
+    <button class="btn primary" style="width:100%;margin-top:12px" onclick="closeResModal()">完成</button>`;
+  document.getElementById('scrim7').classList.add('on'); document.getElementById('resmodal').classList.add('on'); }
+function resAdj(o,k,delta){ const p=curPlayers()[o-1]; p[k]=Math.max(0,(p[k]||0)+delta); document.getElementById('res-'+(k==='coins'?'c':'k')+o).textContent=p[k]; scheduleSave(); }
+function closeResModal(){ document.getElementById('scrim7').classList.remove('on'); document.getElementById('resmodal').classList.remove('on'); render(); }
 function moveQty(delta){ if(!moveSrc)return; moveSrc.qty=Math.max(1,Math.min(moveSrc.max,(moveSrc.qty||moveSrc.max)+delta)); showCellInfo(moveSrc.r,moveSrc.c); }
 function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选有效地块'); return; }
   if(!moveSrc){
@@ -529,7 +628,7 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
   if(cost==null){ toast(moveSrc.kind==='air'?'超范围：飞机按直线距离，最多移动力格':'超范围：只能沿己方相邻格流动'); return; }
   // 先复制分支并切过去，在分支上执行；失败则丢弃该分支
   const parentId=selId;
-  selId=addNode(parentId, clone(curNode().board), '动作', 'edit'); undoStack=[];
+  selId=addNode(parentId, clone(curNode().board), '动作', 'edit', clone(curPlayers())); undoStack=[];
   const bb=curBoard(), A=bb[moveSrc.r][moveSrc.c], B=bb[r][c];
   const abort=(msg)=>{ const p=tree.nodes[parentId]; if(p)p.children=p.children.filter(x=>x!==selId); delete tree.nodes[selId]; selId=parentId; moveSrc=null; render(); toast(msg); };
   const done=(def,msg)=>{ const nm=prompt('这一步命名：',def); tree.nodes[selId].label=(nm===null?def:(nm.trim()||def)); moveSrc=null; selTile={r,c}; render(); showCellInfo(r,c); renderDrawer(); scheduleSave(); toast(msg); };
@@ -632,7 +731,7 @@ function applyBattle(){
   if(!lastBattle)return; const {res,src,tgt}=lastBattle;
   // 先复制分支并切过去，在分支上结算
   const parentId=selId;
-  selId=addNode(parentId, clone(curNode().board), '攻击', 'edit'); undoStack=[];
+  selId=addNode(parentId, clone(curNode().board), '攻击', 'edit', clone(curPlayers())); undoStack=[];
   const b=curBoard(), A=b[src.r][src.c], D=b[tgt.r][tgt.c];
   if(res.category==='win'){
     // 占领：进攻方全军移入，目标改归属、敌建筑被摧毁
@@ -740,7 +839,7 @@ function forkVariation(){
   const name=prompt('新变化命名：', def);
   if(name===null)return;   // 取消则不创建
   const label=name.trim()||def;
-  const id=addNode(parent.id, clone(parent.board), label, 'edit');
+  const id=addNode(parent.id, clone(parent.board), label, 'edit', clone(parent.players||curPlayers()));
   selId=id; undoStack=[]; clearActionState(); render(); scheduleSave(); renderDrawer();
   toast('已复制为「'+label+'」 → 开始编辑');
 }
@@ -765,9 +864,9 @@ function renderDrawer(){
   })(tree.rootId,0);
   host.innerHTML=h;
 }
-function clearActionState(){ attackMode=false; atkTile=null; moveMode=false; moveSrc=null;
-  const a=document.getElementById('atk-btn'), m=document.getElementById('mv-btn');
-  if(a)a.classList.remove('on'); if(m)m.classList.remove('on'); }
+function clearActionState(){ attackMode=false; atkTile=null; moveMode=false; moveSrc=null; buildMode=false;
+  const a=document.getElementById('atk-btn'), m=document.getElementById('mv-btn'), bd=document.getElementById('bd-btn');
+  if(a)a.classList.remove('on'); if(m)m.classList.remove('on'); if(bd)bd.classList.remove('on'); }
 function gotoNode(id){ selId=id; undoStack=[]; clearActionState();
   render(); renderDrawer(); closeDrawer();
   const n=tree.nodes[id]; if(n)toast('已切到「'+n.label+'」'); }
@@ -839,7 +938,7 @@ function doImportText(){
   for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){ const s=data[r]&&data[r][c]; if(!s||typeof s!=='object')continue; importCell(s,b[r][c]); filled++; }
   // 钥匙（若有）→ 各玩家
   const keys=(!Array.isArray(p)&&p.keys)?p.keys:null;
-  if(keys&&tree.players)for(let i=0;i<5;i++){ if(Array.isArray(keys[i])) tree.players[i].keys=keys[i].slice(0,5).map(x=>+x||0); }
+  if(keys){const P=curPlayers();for(let i=0;i<5;i++){ if(Array.isArray(keys[i])) P[i].keys=keys[i].slice(0,5).map(x=>+x||0); }}
   pushUndo(); curNode().board=b; render(); scheduleSave(); closeImport(); toast('已导入底图（'+filled+' 格）为当前局面');
 }
 
