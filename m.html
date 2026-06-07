@@ -178,6 +178,14 @@
   .tile.mv-src{box-shadow:0 0 0 2px var(--gold),0 0 16px -2px var(--gold);border-color:var(--gold)!important;z-index:2}
   .tile.mv-reach{outline:2.5px dashed rgba(255,255,255,.9);outline-offset:-4px;background:rgba(255,255,255,.08)}
   body.editing #scrim{background:rgba(4,7,11,.28)}   /* 编辑时减淡遮罩，实时看到改动 */
+  .cellinfo{position:fixed;top:64px;right:10px;z-index:60;min-width:128px;background:rgba(16,22,30,.96);
+    border:1px solid var(--line2);border-radius:12px;padding:8px 10px;box-shadow:0 8px 24px rgba(0,0,0,.45);
+    opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity .15s,transform .15s}
+  .cellinfo.on{opacity:1;transform:none}
+  .cellinfo .ci-h{font-size:10px;color:var(--dim2);letter-spacing:.5px;margin-bottom:5px}
+  .cellinfo .ci-row{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12.5px;padding:2px 0}
+  .cellinfo .ci-row span{color:var(--ink)} .cellinfo .ci-row b{color:var(--gold);font-weight:700;white-space:nowrap}
+  .cellinfo .ci-none{font-size:11.5px;color:var(--dim)}
 
   /* attack result card */
   .result{position:fixed;left:0;right:0;bottom:0;z-index:55;transform:translateY(112%);transition:transform .3s var(--sheet-ease);
@@ -205,6 +213,8 @@
   <button class="iconbtn" onclick="openHelp()" style="padding:0 12px">?</button>
   <button class="iconbtn" onclick="openDrawer()">☰ <span id="t-count">变化</span></button>
 </div>
+
+<div class="cellinfo" id="cellinfo"></div>
 
 <div class="scoreboard" id="score"></div>
 
@@ -622,9 +632,19 @@ function applyBattle(){
 function closeResult(){ document.getElementById('scrim3').classList.remove('on'); document.getElementById('result').classList.remove('on'); }
 function openHelp(){ document.getElementById('scrim4').classList.add('on'); document.getElementById('help').classList.add('on'); }
 function closeHelp(){ document.getElementById('scrim4').classList.remove('on'); document.getElementById('help').classList.remove('on'); }
+function showCellInfo(r,c){
+  const d=curBoard()[r][c], box=document.getElementById('cellinfo'); let rows='';
+  if(d.building==='base'&&(d.baseLevel||1)===4) rows+=`<div class="ci-row"><span>⌂ 超级基地</span><b>移动 ${gStam(d)}</b></div>`;
+  if(d.ground!=='none'&&d.groundCount>0) rows+=`<div class="ci-row"><span>${d.ground==='tank'?'🛡️ 坦克':'👣 士兵'}×${d.groundCount}</span><b>移动 ${gStam(d)}</b></div>`;
+  if(d.hasAir&&d.airCount>0) rows+=`<div class="ci-row"><span>✈️ 飞机×${d.airCount}</span><b>移动 ${aStam(d)}</b></div>`;
+  box.innerHTML=`<div class="ci-h">(${r},${c}) 单位移动力</div>`+(rows||'<div class="ci-none">该格无可移动单位</div>');
+  box.classList.add('on');
+}
+function hideCellInfo(){ const b=document.getElementById('cellinfo'); if(b)b.classList.remove('on'); }
 function openSheet(){
   document.body.classList.add('editing');
   const {r,c}=selTile, d=curBoard()[r][c];
+  showCellInfo(r,c);
   document.getElementById('s-coord').textContent=`(${r},${c})`+(isBase(r,c)?' · 出生点':'');
   document.getElementById('s-title').textContent='编辑地块';
   document.getElementById('s-enabled').innerHTML=[[true,'✓ 在地图中'],[false,'✕ 移出地图']].map(([v,lab])=>
@@ -652,7 +672,7 @@ function openSheet(){
   document.getElementById('scrim').classList.add('on');
   document.getElementById('sheet').classList.add('on');
 }
-function closeSheet(){ document.body.classList.remove('editing'); document.getElementById('scrim').classList.remove('on'); document.getElementById('sheet').classList.remove('on'); render(); scheduleSave(); }
+function closeSheet(){ document.body.classList.remove('editing'); hideCellInfo(); document.getElementById('scrim').classList.remove('on'); document.getElementById('sheet').classList.remove('on'); render(); scheduleSave(); }
 function refreshDP(){ const {r,c}=selTile; document.getElementById('s-dp').textContent=tileDP(curBoard(),r,c); }
 
 function pushUndo(){ undoStack.push(clone(curBoard())); if(undoStack.length>40)undoStack.shift(); }
@@ -665,7 +685,7 @@ function setLevel(l){ edit(d=>{ d.level=l; d.showLevel=true; }); }
 function setBuild(k){ edit(d=>{ d.building=k; if(k==='base'&&!d.baseLevel)d.baseLevel=1; }); }
 function setBaseLv(l){ edit(d=>{ d.baseLevel=l; }); }
 function bump(u,delta){ pushUndo(); const d=curBoard()[selTile.r][selTile.c]; setCount(d,u,getCount(d,u)+delta);
-  ['soldier','tank','plane'].forEach(x=>document.getElementById('v-'+x).textContent=getCount(d,x)); refreshDP(); render(); scheduleSave(); }
+  ['soldier','tank','plane'].forEach(x=>document.getElementById('v-'+x).textContent=getCount(d,x)); refreshDP(); showCellInfo(selTile.r,selTile.c); render(); scheduleSave(); }
 function undoLast(){ if(!undoStack.length)return; curNode().board=undoStack.pop(); render(); scheduleSave(); toast('已撤销'); }
 
 // ============================================================
