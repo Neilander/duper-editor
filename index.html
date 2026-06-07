@@ -351,7 +351,7 @@ function clone(o){return JSON.parse(JSON.stringify(o));}
 // ground holds one class (soldier|tank) + count; plane separate. For UI we expose soldier/tank/plane counts.
 function getCount(cell,u){ if(u==='plane')return cell.hasAir?cell.airCount:0; return (cell.ground===u)?cell.groundCount:0; }
 function setCount(cell,u,n){ n=Math.max(0,n|0);
-  if(u==='plane'){ cell.hasAir=n>0; cell.airCount=n; return; }
+  if(u==='plane'){ cell.hasAir=n>0; cell.airCount=n; delete cell.am; return; }
   // soldier/tank share the single ground slot (game: 1 ground class per tile)
   if(n===0){ if(cell.ground===u){cell.ground='none';cell.groundCount=0;delete cell.gm;} return; }
   cell.ground=u; cell.groundCount=n; delete cell.gm;   // 手动编辑视为满移动力
@@ -416,6 +416,12 @@ function reachMap(b,sr,sc,budget){
     for(const [nr,nc] of nb(r,c)){ const t=b[nr][nc]; if(!t.enabled||t.owner!==owner)continue;
       const k=nr+','+nc; if(dist[k]==null){ dist[k]=d0+1; q.push([nr,nc]); } } }
   return dist; }
+// 飞机：剩余移动力（am 未设视为满7）；按直线(曼哈顿)距离飞越，落点为己方格
+function aStam(d){ return (d.am!=null)?d.am:MOVE.plane; }
+function airReach(b,sr,sc,budget){ const owner=b[sr][sc].owner, m={};
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){ const t=b[r][c]; if(!t.enabled||t.owner!==owner)continue;
+    const dd=Math.abs(r-sr)+Math.abs(c-sc); if(dd<=budget)m[r+','+c]=dd; }
+  return m; }
 function newId(){return 'n'+(uid++);}
 function defaultPlayers(){return [0,1,2,3,4].map(i=>({coins:0,ap:2,apCap:i===0?3:2,hand:[],keys:[0,0,0,0,0]}));}
 function emptyTree(name){return {name,title:name,players:defaultPlayers(),rootId:null,nodes:{}};}
@@ -486,20 +492,32 @@ function toggleAttack(){ attackMode=!attackMode; atkTile=null;
 function toggleMove(){ moveMode=!moveMode; moveSrc=null;
   if(moveMode){ attackMode=false; atkTile=null; document.getElementById('atk-btn').classList.remove('on'); }
   document.getElementById('mv-btn').classList.toggle('on',moveMode);
-  render(); toast(moveMode?'🦶 移动：点你的地面兵 → 点己方可达格（同兵种合并，移动力取最低）':'已退出移动'); }
+  render(); toast(moveMode?'🦶 移动：点你的地面兵/飞机 → 点己方可达格（同兵种合并，移动力取最低；飞机可飞越）':'已退出移动'); }
 function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选有效地块'); return; }
   if(!moveSrc){
-    if(d.owner<1||d.ground==='none'||d.groundCount<=0){ toast('选你的有地面兵的格子'); return; }
-    const stam=gStam(d);
-    if(stam<=0){ toast('这些兵本回合移动力已用完'); return; }
-    moveSrc={r,c,stam,reach:reachMap(b,r,c,stam)};
-    render(); toast((d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount+'，移动力剩 '+stam+'，点己方可达格移动');
+    if(d.owner<1){ toast('选你自己的格子'); return; }
+    let kind=null,stam=0,reach=null,desc='';
+    if(d.ground!=='none'&&d.groundCount>0){ kind='ground'; stam=gStam(d); reach=reachMap(b,r,c,stam); desc=(d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount; }
+    else if(d.hasAir&&d.airCount>0){ kind='air'; stam=aStam(d); reach=airReach(b,r,c,stam); desc='飞机×'+d.airCount; }
+    if(!kind){ toast('选你的有兵格（地面兵或飞机）'); return; }
+    if(stam<=0){ toast('这些单位本回合移动力已用完'); return; }
+    moveSrc={r,c,kind,stam,reach};
+    render(); toast(desc+'，移动力剩 '+stam+(kind==='air'?'（飞机可飞越，点己方可达格）':'，点己方可达格移动'));
     return;
   }
   if(moveSrc.r===r&&moveSrc.c===c){ moveSrc=null; render(); return; }
   const cost=moveSrc.reach[r+','+c];
-  if(cost==null){ toast('超范围：只能沿己方相邻格流动'); return; }
+  if(cost==null){ toast(moveSrc.kind==='air'?'超范围：飞机按直线距离，最多移动力格':'超范围：只能沿己方相邻格流动'); return; }
   const A=b[moveSrc.r][moveSrc.c], B=b[r][c];
+  if(moveSrc.kind==='air'){
+    pushUndo();
+    const arrive=aStam(A)-cost;
+    if(B.hasAir&&B.airCount>0){ B.airCount+=A.airCount; B.am=Math.min(aStam(B),arrive); }
+    else { B.hasAir=true; B.airCount=A.airCount; B.am=arrive; B.showLevel=true; }
+    A.hasAir=false; A.airCount=0; delete A.am;
+    const left=B.am; moveSrc=null; render(); scheduleSave();
+    toast('飞机移动 '+cost+' 格，合并后移动力剩 '+left); return;
+  }
   if(B.ground!=='none'&&B.ground!==A.ground){ toast('目标已有不同地面兵种，无法合并'); return; }
   pushUndo();
   const arriveStam=gStam(A)-cost;
@@ -546,7 +564,7 @@ function applyBattle(){
     // 占领：进攻方全军移入，目标改归属、敌建筑被摧毁
     D.owner=A.owner; D.showLevel=true;
     D.ground=A.ground; D.groundCount=A.groundCount; D.hasAir=A.hasAir; D.airCount=A.airCount;
-    D.building='none'; delete D.gm;
+    D.building='none'; delete D.gm; delete D.am;
   } else {
     // 未占领：只扣目标格"自身"部队（支援坦克属邻格，不动），按死亡优先级 士→坦→机
     const baseDef=(res.tBuff||0)+(res.kBuff||0)+(res.npc||0);
