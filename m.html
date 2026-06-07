@@ -212,10 +212,10 @@
 </div>
 
 <div class="dock">
-  <button class="btn" style="flex:0 0 50px" onclick="toggleMove()" id="mv-btn">🦶</button>
-  <button class="btn" style="flex:0 0 50px" onclick="toggleAttack()" id="atk-btn">⚔</button>
-  <button class="btn grow primary" onclick="forkVariation()">⎘ 复制为新变化</button>
-  <button class="btn" style="flex:0 0 48px" onclick="undoLast()" id="undo-btn">↶</button>
+  <button class="btn" style="flex:0 0 64px;font-size:12.5px;gap:3px" onclick="toggleMove()" id="mv-btn">🦶移动</button>
+  <button class="btn" style="flex:0 0 64px;font-size:12.5px;gap:3px" onclick="toggleAttack()" id="atk-btn">⚔攻击</button>
+  <button class="btn grow primary" onclick="forkVariation()">⎘ 复制分叉</button>
+  <button class="btn" style="flex:0 0 44px" onclick="undoLast()" id="undo-btn">↶</button>
 </div>
 
 <!-- tile editor sheet -->
@@ -494,17 +494,48 @@ function attackTap(r,c){
   const src=atkTile; const res=computeBattle(b,src.r,src.c,r,c);
   atkTile=null; render(); showBattleResult(res,src,{r,c});
 }
+let lastBattle=null;
 function showBattleResult(res,a,t){
   const [lab,col]=CATR[res.category];
+  lastBattle={res,src:a,tgt:t};
   document.getElementById('result').innerHTML=`<div class="rcard">
     <div style="display:flex;align-items:center"><span class="rcat" style="color:${col};border-color:${col}">${lab}</span><span class="rvs">进攻 (${a.r},${a.c}) → 目标 (${t.r},${t.c})</span></div>
     <div class="rap"><b style="color:#ffd9a3">AP ${res.ap}</b><span>vs</span><b style="color:#bfe3ff">DP ${res.dp}</b></div>
     <div class="rdetail">DP 含 ${res.npc?('NPC防御 '+res.npc+' · '):''}地块Buff ${res.tBuff} · 钥匙 ${res.kBuff} · 建筑 ${res.bPower}</div>
     <div class="rres" style="color:${col}">${res.category==='win'?'✅ 占领目标，进攻方全军移入':'守军剩余：'+survText(res.survivors)}</div>
-    <button class="btn primary" style="width:100%;margin-top:15px" onclick="closeResult()">好</button>
+    <div style="display:flex;gap:8px;margin-top:15px">
+      <button class="btn" style="flex:1" onclick="closeResult()">仅预览</button>
+      <button class="btn primary" style="flex:1.6" onclick="applyBattle()">⚔ 打这一仗（改棋盘）</button>
+    </div>
   </div>`;
   document.getElementById('scrim3').classList.add('on');
   document.getElementById('result').classList.add('on');
+}
+function applyBattle(){
+  if(!lastBattle)return; const {res,src,tgt}=lastBattle;
+  pushUndo();
+  const b=curBoard(), A=b[src.r][src.c], D=b[tgt.r][tgt.c];
+  if(res.category==='win'){
+    // 占领：进攻方全军移入，目标改归属、敌建筑被摧毁
+    D.owner=A.owner; D.showLevel=true;
+    D.ground=A.ground; D.groundCount=A.groundCount; D.hasAir=A.hasAir; D.airCount=A.airCount;
+    D.building='none';
+  } else {
+    // 未占领：只扣目标格"自身"部队（支援坦克属邻格，不动），按死亡优先级 士→坦→机
+    const baseDef=(res.tBuff||0)+(res.kBuff||0)+(res.npc||0);
+    let rem=Math.max(0, res.ap - baseDef);
+    const own=[];
+    if(D.ground==='soldier'&&D.groundCount>0)own.push({k:'soldier',power:1,count:D.groundCount});
+    if(D.ground==='tank'&&D.groundCount>0)own.push({k:'tank',power:3,count:D.groundCount});
+    if(D.hasAir&&D.airCount>0)own.push({k:'plane',power:4,count:D.airCount});
+    D.ground='none';D.groundCount=0;D.hasAir=false;D.airCount=0;
+    for(const s of own){ let a=s.count; while(a>0&&rem>=s.power){rem-=s.power;a--;}
+      if(a>0){ if(s.k==='plane'){D.hasAir=true;D.airCount=a;} else {D.ground=s.k;D.groundCount=a;} } }
+  }
+  // 进攻方 all-in：源格可动部队清空（建筑/归属保留）
+  A.ground='none'; A.groundCount=0; A.hasAir=false; A.airCount=0;
+  render(); scheduleSave(); closeResult();
+  toast(res.category==='win'?('已占领 ('+tgt.r+','+tgt.c+')'):'已结算，棋盘已更新');
 }
 function closeResult(){ document.getElementById('scrim3').classList.remove('on'); document.getElementById('result').classList.remove('on'); }
 function openHelp(){ document.getElementById('scrim4').classList.add('on'); document.getElementById('help').classList.add('on'); }
