@@ -527,15 +527,19 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
   if(moveSrc.r===r&&moveSrc.c===c){ moveSrc=null; render(); showCellInfo(r,c); return; }
   const cost=moveSrc.reach[r+','+c];
   if(cost==null){ toast(moveSrc.kind==='air'?'超范围：飞机按直线距离，最多移动力格':'超范围：只能沿己方相邻格流动'); return; }
-  const A=b[moveSrc.r][moveSrc.c], B=b[r][c];
+  // 先复制分支并切过去，在分支上执行；失败则丢弃该分支
+  const parentId=selId;
+  selId=addNode(parentId, clone(curNode().board), '动作', 'edit'); undoStack=[];
+  const bb=curBoard(), A=bb[moveSrc.r][moveSrc.c], B=bb[r][c];
+  const abort=(msg)=>{ const p=tree.nodes[parentId]; if(p)p.children=p.children.filter(x=>x!==selId); delete tree.nodes[selId]; selId=parentId; moveSrc=null; render(); toast(msg); };
+  const done=(def,msg)=>{ const nm=prompt('这一步命名：',def); tree.nodes[selId].label=(nm===null?def:(nm.trim()||def)); moveSrc=null; selTile={r,c}; render(); showCellInfo(r,c); renderDrawer(); scheduleSave(); toast(msg); };
   const have=(moveSrc.kind==='air'?A.airCount:A.groundCount);
   const qty=Math.max(1,Math.min(moveSrc.qty||moveSrc.max, have));
   const fullLeave=(qty>=have);
   if(moveSrc.kind==='air'){
-    pushUndo();
     const arrive=aStam(A)-cost;
     let carried='', gReach=null;
-    if(A.ground!=='none'&&A.groundCount>0) gReach=reachMap(b,moveSrc.r,moveSrc.c,gStam(A));
+    if(A.ground!=='none'&&A.groundCount>0) gReach=reachMap(bb,moveSrc.r,moveSrc.c,gStam(A));
     const gcost = gReach? gReach[r+','+c] : null;
     const groundGoes = (gcost!=null && (B.ground==='none'||B.ground===A.ground));
     if(B.hasAir&&B.airCount>0){ B.airCount+=qty; B.am=Math.min(aStam(B),arrive); }
@@ -548,39 +552,33 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
       carried=' + '+(A.ground==='tank'?'坦克':'士兵')+'×'+A.groundCount+'随行';
       A.ground='none'; A.groundCount=0; delete A.gm;
     }
-    const left=B.am; moveSrc=null; commitAsBranch('空运→('+r+','+c+')'); selTile={r,c}; render(); showCellInfo(r,c); renderDrawer(); scheduleSave();
-    toast('飞机×'+qty+carried+' 移动 '+cost+' 格，飞机移动力剩 '+left); return;
+    done('空运→('+r+','+c+')', '飞机×'+qty+carried+' 移动 '+cost+' 格'); return;
   }
   if(B.ground!=='none'&&B.ground!==A.ground){
     // 目标格有不同地面兵种 → 换位：对方退到我来路相邻格（需它有移动力；分兵时源格未腾空则无处可退）
-    if(gStam(B)<=0){ toast('目标格单位没有移动力，无法进入/换位'); return; }
+    if(gStam(B)<=0){ abort('目标格单位没有移动力，无法进入/换位'); return; }
     let via=null;
     for(const [nr,nc] of nb(r,c)){
       if(moveSrc.reach[nr+','+nc]===cost-1){
-        const T=b[nr][nc], isSrc=(nr===moveSrc.r&&nc===moveSrc.c);
+        const T=bb[nr][nc], isSrc=(nr===moveSrc.r&&nc===moveSrc.c);
         if((isSrc&&fullLeave)||(!isSrc&&(T.ground==='none'||T.ground===B.ground))){ via={r:nr,c:nc}; break; }
       }
     }
-    if(!via){ toast(fullLeave?'换位失败：来路上没有能安置对方单位的格':'分兵换位失败：源格还留着兵，对方无处可退（需整组移动）'); return; }
-    pushUndo();
-    const Ut=A.ground,Ua=gStam(A)-cost;
-    const Vt=B.ground,Vc=B.groundCount,Vs=gStam(B);
+    if(!via){ abort(fullLeave?'换位失败：来路上没有能安置对方单位的格':'分兵换位失败：源格还留着兵，对方无处可退（需整组移动）'); return; }
+    const Ut=A.ground,Ua=gStam(A)-cost, Vt=B.ground,Vc=B.groundCount,Vs=gStam(B);
     A.groundCount-=qty; if(A.groundCount<=0){ A.ground='none'; A.groundCount=0; delete A.gm; }
     B.ground=Ut; B.groundCount=qty; B.gm=Ua; B.showLevel=true;
-    const dst=b[via.r][via.c];
+    const dst=bb[via.r][via.c];
     if(dst.ground===Vt&&dst.groundCount>0){ dst.groundCount+=Vc; dst.gm=Math.min(gStam(dst),Vs-1); }
     else { dst.ground=Vt; dst.groundCount=Vc; dst.gm=Vs-1; dst.showLevel=true; }
-    moveSrc=null; commitAsBranch('换位→('+r+','+c+')'); selTile={r,c}; render(); showCellInfo(r,c); renderDrawer(); scheduleSave();
-    toast('换位：'+(Ut==='tank'?'坦克':'士兵')+'×'+qty+'进('+r+','+c+')，'+(Vt==='tank'?'坦克':'士兵')+'×'+Vc+'退到('+via.r+','+via.c+')');
-    return;
+    done('换位→('+r+','+c+')', '换位：'+(Ut==='tank'?'坦克':'士兵')+'×'+qty+'进('+r+','+c+')，'+(Vt==='tank'?'坦克':'士兵')+'×'+Vc+'退到('+via.r+','+via.c+')'); return;
   }
-  pushUndo();
-  const arriveStam=gStam(A)-cost;
+  const arriveStam=gStam(A)-cost, mv=(A.ground==='tank'?'坦克':'士兵');
   if(B.ground===A.ground&&B.groundCount>0){ B.groundCount+=qty; B.gm=Math.min(gStam(B),arriveStam); }
   else { B.ground=A.ground; B.groundCount=qty; B.gm=arriveStam; B.showLevel=true; }
   A.groundCount-=qty; if(A.groundCount<=0){ A.ground='none'; A.groundCount=0; delete A.gm; }
-  const left=B.gm, mv=(d.ground==='tank'?'坦克':'士兵'); moveSrc=null; commitAsBranch('移动→('+r+','+c+')'); selTile={r,c}; render(); showCellInfo(r,c); renderDrawer(); scheduleSave();
-  toast('移动 '+mv+'×'+qty+'，'+cost+' 格，移动力剩 '+left); }
+  done('移动→('+r+','+c+')', '移动 '+mv+'×'+qty+'，'+cost+' 格');
+}
 // 攻击范围：飞机=直线飞越内任意敌/中立；坦克=沿己方territory走到的格的相邻敌/中立；士兵=仅相邻
 function attackTargets(b,ar,ac){
   const A=b[ar][ac], owner=A.owner, set=new Set();
@@ -632,7 +630,9 @@ function showBattleResult(res,a,t){
 }
 function applyBattle(){
   if(!lastBattle)return; const {res,src,tgt}=lastBattle;
-  pushUndo();
+  // 先复制分支并切过去，在分支上结算
+  const parentId=selId;
+  selId=addNode(parentId, clone(curNode().board), '攻击', 'edit'); undoStack=[];
   const b=curBoard(), A=b[src.r][src.c], D=b[tgt.r][tgt.c];
   if(res.category==='win'){
     // 占领：进攻方全军移入，目标改归属、敌建筑被摧毁
@@ -653,10 +653,11 @@ function applyBattle(){
   }
   // 进攻方 all-in：源格可动部队清空（建筑/归属保留）
   A.ground='none'; A.groundCount=0; A.hasAir=false; A.airCount=0;
-  const lab=CATR[res.category][0]; closeResult();
-  commitAsBranch('攻击('+src.r+','+src.c+')→('+tgt.r+','+tgt.c+') '+lab);
+  closeResult();
+  const def='攻击('+src.r+','+src.c+')→('+tgt.r+','+tgt.c+') '+CATR[res.category][0];
+  const nm=prompt('这一步命名：', def); tree.nodes[selId].label=(nm===null?def:(nm.trim()||def));
   render(); renderDrawer(); scheduleSave();
-  toast(res.category==='win'?('已占领 ('+tgt.r+','+tgt.c+')，存为新分支'):'已结算，存为新分支');
+  toast(res.category==='win'?('已占领，存为分支「'+tree.nodes[selId].label+'」'):'已结算，存为新分支');
 }
 function closeResult(){ document.getElementById('scrim3').classList.remove('on'); document.getElementById('result').classList.remove('on'); }
 function openHelp(){ document.getElementById('scrim4').classList.add('on'); document.getElementById('help').classList.add('on'); }
@@ -733,16 +734,6 @@ function undoLast(){ if(!undoStack.length)return; curNode().board=undoStack.pop(
 // ============================================================
 //  分叉：复制为新变化
 // ============================================================
-// 动作（移动/攻击）后：父局面恢复到动作前，把结果存进一个命名子分支并切过去
-function commitAsBranch(defLabel){
-  if(!undoStack.length) return;
-  const post=clone(curNode().board);                 // 动作后
-  const pre=undoStack[undoStack.length-1];            // 动作前（pushUndo 时的快照）
-  curNode().board=clone(pre);                         // 父恢复到动作前
-  const nm=prompt('这一步命名：', defLabel);
-  const label=(nm===null)?defLabel:(nm.trim()||defLabel);
-  selId=addNode(selId, post, label, 'edit'); undoStack=[];
-}
 function forkVariation(){
   const parent=curNode();
   const def='变化 '+(parent.children.length+1);
