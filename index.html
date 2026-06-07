@@ -519,7 +519,8 @@ function render(){
     if(pc)troops+=`<span class="u p">${pc}<i>✈️</i></span>`;
     const bld=d.building!=='none'?`<span class="bld">${BLD_ICON[d.building]}${d.building==='base'?`<sub style="font-size:7px">${d.baseLevel}</sub>`:(d.building==='center'&&d.centerType)?`<sub style="font-size:7px">${CTSHORT[d.centerType]||''}</sub>`:''}</span>`:'';
     const lv=(d.owner>0||d.level>1)?`<span class="lv">L${d.level}</span>`:'';
-    const dp=(d.owner>0)?`<span class="dp">⛨${tileDP(b,r,c)}</span>`:'';
+    const _tb=TILE_BUFF[d.level]||1, _x=tileDP(b,r,c)-_tb;
+    const dp=(d.owner>0)?`<span class="dp">⛨${_x}+${_tb}</span>`:'';
     h+=`<div class="${cls}" onclick="tapTile(${r},${c})">
       <div class="own"></div>${lv}${bld}
       <div class="troops">${troops||'<span class="dot"></span>'}</div>${dp}
