@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e13">
+<title>Duper 战场编辑器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0e13; --bg2:#0e131b; --panel:#131a24; --panel2:#0f151e;
+    --line:#222c3a; --line2:#2c394b; --ink:#e9eef6; --dim:#8a97a9; --dim2:#5c6878;
+    --gold:#f5b942; --gold-d:#caa030;
+    --t0:#3a4456; --t1:#23d3ee; --t2:#46e08c; --t3:#4d8bff; --t4:#ff5070; --t5:#ffd23a;
+    --danger:#ff5070; --ok:#46e08c;
+    --r:14px; --sheet-ease:cubic-bezier(.22,1,.36,1);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #16202e 0%, transparent 60%),
+      repeating-linear-gradient(0deg, transparent 0 38px, rgba(255,255,255,.012) 38px 39px),
+      var(--bg);
+    color:var(--ink); font-family:'Chakra Petch',system-ui,-apple-system,'Microsoft YaHei',sans-serif;
+    overflow:hidden; height:100dvh; display:flex; flex-direction:column;
+    user-select:none; -webkit-user-select:none;
+  }
+  .num{font-variant-numeric:tabular-nums; font-feature-settings:"tnum"}
+
+  /* ===== top bar ===== */
+  .top{
+    flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:calc(env(safe-area-inset-top) + 10px) 12px 10px;
+    background:linear-gradient(180deg,var(--panel),rgba(19,26,36,.4)); border-bottom:1px solid var(--line);
+  }
+  .top .badge{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+    background:linear-gradient(145deg,#1c2533,#0f151e);border:1px solid var(--line2);
+    background:linear-gradient(145deg,#1c2533,#0f151e)}
+  .top .badge{background:linear-gradient(145deg,#1c2533,#0f151e)}
+  .top .title{flex:1;min-width:0}
+  .top .title .nm{font-weight:700;font-size:15px;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .top .title .sub{font-size:10.5px;color:var(--dim);letter-spacing:.5px;text-transform:uppercase}
+  .iconbtn{flex:0 0 auto;height:38px;min-width:38px;padding:0 11px;border-radius:10px;border:1px solid var(--line2);
+    background:var(--panel2);color:var(--ink);font-family:inherit;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+  .iconbtn:active{transform:scale(.95);background:#172130}
+  .iconbtn:active{background:#172130}
+
+  /* ===== board ===== */
+  .scoreboard{flex:0 0 auto;display:flex;gap:6px;padding:7px 10px;overflow-x:auto;border-bottom:1px solid var(--line);background:var(--panel2);scrollbar-width:none}
+  .scoreboard::-webkit-scrollbar{display:none}
+  .sc{flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:4px 9px;border-radius:9px;background:#0f1620;border:1px solid var(--line);font-size:11.5px;white-space:nowrap}
+  .sc i{width:9px;height:9px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 5px currentColor}
+  .sc b{font-weight:700;color:var(--ink)} .sc small{color:var(--dim)}
+  .stage{flex:1 1 auto;position:relative;display:flex;align-items:center;justify-content:center;padding:10px;min-height:0}
+  .board{
+    display:grid;width:100%;max-width:min(97vw, 72vh);aspect-ratio:1/1;gap:5px;
+    grid-template-columns:repeat(var(--cols),1fr);
+    transition:max-width .28s var(--sheet-ease);
+  }
+  /* editing: shrink board to the top so the bottom sheet never hides the tile */
+  body.editing .stage{align-items:flex-start;padding-top:8px}
+  body.editing .board{max-width:min(60vw, 30dvh)}
+  .tile{
+    position:relative;border-radius:10px;background:var(--panel2);border:1px solid var(--line);
+    display:flex;flex-direction:column;overflow:hidden;transition:transform .08s, box-shadow .15s;
+    aspect-ratio:1/1;
+  }
+  .tile.off{background:transparent;border:1px dashed rgba(255,255,255,.05)}
+  .tile:active{transform:scale(.93)}
+  .tile .own{position:absolute;inset:0;opacity:.16}
+  .tile.t1 .own{background:var(--t1)} .tile.t2 .own{background:var(--t2)} .tile.t3 .own{background:var(--t3)}
+  .tile.t4 .own{background:var(--t4)} .tile.t5 .own{background:var(--t5)}
+  .tile.t1{border-color:color-mix(in srgb,var(--t1) 55%,var(--line))}
+  .tile.t2{border-color:color-mix(in srgb,var(--t2) 55%,var(--line))}
+  .tile.t3{border-color:color-mix(in srgb,var(--t3) 55%,var(--line))}
+  .tile.t4{border-color:color-mix(in srgb,var(--t4) 55%,var(--line))}
+  .tile.t5{border-color:color-mix(in srgb,var(--t5) 55%,var(--line))}
+  .tile.sel{box-shadow:0 0 0 2px var(--gold),0 0 16px -2px var(--gold); border-color:var(--gold)!important; z-index:2}
+  .tile .lv{position:absolute;top:3px;left:4px;font-size:9px;font-weight:600;color:var(--dim);letter-spacing:.5px}
+  .tile.base-pos::after{content:"";position:absolute;top:3px;right:3px;width:5px;height:5px;border-radius:50%;
+    background:var(--gold);box-shadow:0 0 6px var(--gold);opacity:.8}
+  .tile .bld{position:absolute;top:2px;right:5px;font-size:12px;line-height:1}
+  .tile .troops{margin-top:auto;display:flex;flex-wrap:wrap;gap:0 5px;justify-content:center;align-items:flex-end;
+    padding:2px 2px 4px;line-height:1}
+  .tile .u{font-size:11px;font-weight:700;display:flex;align-items:center;gap:1px}
+  .tile .u i{font-style:normal;font-size:9px;opacity:.85}
+  .tile .u.s{color:#dfe7f2} .tile .u.t{color:#ffd9a3} .tile .u.p{color:#bfe3ff}
+  .tile .empty{margin:auto;width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.07)}
+  .tile .dp{position:absolute;bottom:2px;left:3px;font-size:8px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:-.4px;line-height:1}
+
+  /* tile-level tint for neutral */
+  .tile.lvl2{background:linear-gradient(180deg,#141d22,#0f151e)}
+  .tile.lvl3{background:linear-gradient(180deg,#1b1f17,#0f151e)}
+
+  /* ===== bottom action dock ===== */
+  .dock{flex:0 0 auto;display:flex;gap:8px;padding:9px 12px calc(env(safe-area-inset-bottom) + 11px);
+    background:linear-gradient(0deg,var(--panel),rgba(19,26,36,.3));border-top:1px solid var(--line)}
+  .dock .grow{flex:1}
+  .btn{height:46px;border-radius:12px;border:1px solid var(--line2);background:var(--panel2);color:var(--ink);
+    font-family:inherit;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:7px;letter-spacing:.3px}
+  .btn:active{transform:scale(.97)}
+  .btn.primary{background:linear-gradient(145deg,#3a2c10,#241b0a);border-color:var(--gold-d);color:var(--gold)}
+  .btn.primary:active{background:#332610}
+
+  /* ===== bottom sheet (tile editor) ===== */
+  .scrim{position:fixed;inset:0;background:rgba(4,7,11,.55);backdrop-filter:blur(2px);opacity:0;pointer-events:none;
+    transition:opacity .25s;z-index:40}
+  .scrim.on{opacity:1;pointer-events:auto}
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--panel);
+    border-top:1px solid var(--line2);border-radius:20px 20px 0 0;padding:8px 16px calc(env(safe-area-inset-bottom) + 18px);
+    transform:translateY(110%);transition:transform .32s var(--sheet-ease);box-shadow:0 -18px 50px rgba(0,0,0,.5);
+    max-height:68dvh;overflow:auto}
+  .sheet.on{transform:translateY(0)}
+  .sheet .handle{width:38px;height:4px;border-radius:3px;background:var(--line2);margin:4px auto 10px}
+  .sheet h3{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:2px}
+  .sheet .coord{font-size:11px;color:var(--dim);font-weight:500}
+  .sec{margin-top:14px}
+  .sec .lab{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.8px;margin-bottom:7px;display:flex;justify-content:space-between}
+  .chips{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{height:42px;min-width:42px;padding:0 12px;border-radius:11px;border:1px solid var(--line2);background:var(--panel2);
+    color:var(--ink);font-family:inherit;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:6px}
+  .chip:active{transform:scale(.95)}
+  .chip.on{border-color:var(--gold);background:#241b0a;color:var(--gold)}
+  .owncircle{width:44px;height:44px;border-radius:50%;border:2px solid var(--line2);display:grid;place-items:center;position:relative}
+  .owncircle.on{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.15)}
+  .owncircle .dotc{width:26px;height:26px;border-radius:50%}
+  .owncircle.on .tick{position:absolute;color:#000;font-size:15px;font-weight:700}
+
+  /* stepper */
+  .stepper{display:flex;align-items:center;gap:0;border:1px solid var(--line2);border-radius:12px;overflow:hidden;background:var(--panel2)}
+  .stepper button{width:50px;height:48px;border:none;background:transparent;color:var(--ink);font-family:inherit;font-size:24px;font-weight:600;display:grid;place-items:center}
+  .stepper button:active{background:#1c2533}
+  .stepper button:active{background:#1b2533}
+  .stepper .v{flex:1;text-align:center;font-size:20px;font-weight:700;min-width:48px}
+  .uline{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .uline .ui{width:30px;text-align:center;font-size:17px}
+  .uline .un{flex:1}
+  .uline .un b{font-size:14px;font-weight:600;display:block}
+  .uline .un small{font-size:10.5px;color:var(--dim)}
+
+  .dpline{margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);
+    display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--dim)}
+  .dpline b{color:var(--ink);font-size:17px;font-weight:700}
+
+  /* ===== variation drawer ===== */
+  .drawer{position:fixed;top:0;bottom:0;left:0;width:min(82vw,340px);z-index:60;background:var(--panel);
+    border-right:1px solid var(--line2);transform:translateX(-103%);transition:transform .3s var(--sheet-ease);
+    display:flex;flex-direction:column;box-shadow:18px 0 50px rgba(0,0,0,.5)}
+  .drawer.on{transform:translateX(0)}
+  .drawer .dh{padding:calc(env(safe-area-inset-top) + 14px) 14px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .drawer .dh b{flex:1;font-size:15px;font-weight:700}
+  .drawer .list{flex:1;overflow:auto;padding:8px}
+  .vnode{display:flex;align-items:center;gap:8px;padding:10px 10px;border-radius:10px;margin-bottom:3px}
+  .vnode:active{background:#172130}
+  .vnode.on{background:#16202c;outline:1px solid var(--line2)}
+  .vnode.on{background:#16202c;outline:1px solid var(--gold-d)}
+  .vnode .twig{width:14px;text-align:center;color:var(--dim2);flex:0 0 auto;font-size:12px}
+  .vnode .nm{flex:1;font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vnode .nm small{color:var(--dim);font-size:11px}
+  .vnode .mini{flex:0 0 auto;color:var(--dim2);font-size:15px}
+  .drawer .df{padding:10px 12px calc(env(safe-area-inset-bottom) + 12px);border-top:1px solid var(--line);display:flex;gap:8px}
+
+  .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 58px);transform:translateX(-50%) translateY(-12px);
+    background:#1c2533;border:1px solid var(--line2);color:var(--ink);padding:9px 16px;border-radius:11px;font-size:13px;font-weight:500;
+    z-index:90;opacity:0;transition:.25s;pointer-events:none;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  .toast{background:#1c2634}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  .save-dot{font-size:10px;color:var(--dim);letter-spacing:.5px}
+
+  /* attack mode highlights */
+  #atk-btn.on{background:linear-gradient(145deg,#3a1018,#240a0e);border-color:var(--danger);color:var(--danger)}
+  .tile.atk-src{box-shadow:0 0 0 2px var(--gold),0 0 16px -2px var(--gold);border-color:var(--gold)!important;z-index:2}
+  .tile.atk-tgt{box-shadow:inset 0 0 0 2px var(--danger),0 0 12px -3px var(--danger)}
+  #mv-btn.on{background:linear-gradient(145deg,#0e3038,#0a1f24);border-color:var(--t1);color:var(--t1)}
+  .tile.mv-src{box-shadow:0 0 0 2px var(--gold),0 0 16px -2px var(--gold);border-color:var(--gold)!important;z-index:2}
+  .tile.mv-reach{box-shadow:inset 0 0 0 2px var(--t1);background:rgba(35,211,238,.07)}
+  body.editing #scrim{background:rgba(4,7,11,.28)}   /* 编辑时减淡遮罩，实时看到改动 */
+
+  /* attack result card */
+  .result{position:fixed;left:0;right:0;bottom:0;z-index:55;transform:translateY(112%);transition:transform .3s var(--sheet-ease);
+    padding:0 12px calc(env(safe-area-inset-bottom) + 16px)}
+  .result.on{transform:translateY(0)}
+  .rcard{background:var(--panel);border:1px solid var(--line2);border-radius:18px;padding:15px 16px;box-shadow:0 -16px 50px rgba(0,0,0,.5)}
+  .rcat{display:inline-block;font-size:19px;font-weight:700;padding:2px 14px;border:1.5px solid;border-radius:10px;vertical-align:middle}
+  .rvs{font-size:12px;color:var(--dim);margin-left:10px}
+  .rap{font-size:22px;font-weight:700;display:flex;gap:10px;align-items:baseline;margin-top:10px}
+  .rap span{font-size:13px;color:var(--dim2);font-weight:500}
+  .rdetail{font-size:11.5px;color:var(--dim);margin-top:5px}
+  .rres{margin-top:9px;font-size:14.5px;font-weight:600}
+  .help p{font-size:13px;line-height:1.7;color:var(--dim);margin:10px 0}
+  .help b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="badge">🗺️</div>
+  <div class="title">
+    <div class="nm" id="t-name">未命名战场</div>
+    <div class="sub"><span id="t-cat">基础局面</span> · <span class="save-dot" id="t-save">—</span></div>
+  </div>
+  <button class="iconbtn" onclick="openHelp()" style="padding:0 12px">?</button>
+  <button class="iconbtn" onclick="openDrawer()">☰ <span id="t-count">变化</span></button>
+</div>
+
+<div class="scoreboard" id="score"></div>
+
+<div class="stage">
+  <div class="board" id="board" style="--cols:7"></div>
+</div>
+
+<div class="dock">
+  <button class="btn" style="flex:0 0 50px" onclick="toggleMove()" id="mv-btn">🦶</button>
+  <button class="btn" style="flex:0 0 50px" onclick="toggleAttack()" id="atk-btn">⚔</button>
+  <button class="btn grow primary" onclick="forkVariation()">⎘ 复制为新变化</button>
+  <button class="btn" style="flex:0 0 48px" onclick="undoLast()" id="undo-btn">↶</button>
+</div>
+
+<!-- tile editor sheet -->
+<div class="scrim" id="scrim" onclick="closeSheet()"></div>
+<div class="sheet" id="sheet">
+  <div class="handle"></div>
+  <h3><span id="s-title">地块</span> <span class="coord num" id="s-coord"></span></h3>
+
+  <div class="sec">
+    <div class="lab">地块状态</div>
+    <div class="chips" id="s-enabled"></div>
+  </div>
+
+  <div id="s-body">
+  <div class="sec">
+    <div class="lab">归属</div>
+    <div class="chips" id="s-owner"></div>
+  </div>
+
+  <div class="sec" id="s-level-sec">
+    <div class="lab">地块等级 <span style="color:var(--dim2);text-transform:none;letter-spacing:0">防御Buff</span></div>
+    <div class="chips" id="s-level"></div>
+  </div>
+
+  <div class="sec">
+    <div class="lab">地面 / 空中 单位</div>
+    <div class="uline"><div class="ui">👣</div><div class="un"><b>士兵</b><small>战力1 · 移动1 · 1金</small></div><div class="stepper"><button onclick="bump('soldier',-1)">−</button><div class="v num" id="v-soldier">0</div><button onclick="bump('soldier',1)">+</button></div></div>
+    <div class="uline"><div class="ui">🛡️</div><div class="un"><b>坦克</b><small>战力3 · 移动5 · 1金+对子 · 可支援</small></div><div class="stepper"><button onclick="bump('tank',-1)">−</button><div class="v num" id="v-tank">0</div><button onclick="bump('tank',1)">+</button></div></div>
+    <div class="uline"><div class="ui">✈️</div><div class="un"><b>飞机</b><small>战力4 · 移动7 · 3金+同花/三条</small></div><div class="stepper"><button onclick="bump('plane',-1)">−</button><div class="v num" id="v-plane">0</div><button onclick="bump('plane',1)">+</button></div></div>
+  </div>
+
+  <div class="sec">
+    <div class="lab">建筑</div>
+    <div class="chips" id="s-bld"></div>
+    <div class="chips" id="s-baselv" style="margin-top:8px;display:none"></div>
+  </div>
+  </div><!-- /s-body -->
+
+  <div class="dpline">
+    <span>该地块防御力 <span style="color:var(--dim2)">DP（含建筑+地块Buff）</span></span>
+    <b class="num" id="s-dp">0</b>
+  </div>
+
+  <button class="btn primary" style="margin-top:16px;width:100%" onclick="closeSheet()">完成</button>
+</div>
+
+<!-- variations drawer -->
+<div class="scrim" id="scrim2" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="dh"><b>变化列表</b>
+    <button class="iconbtn" onclick="newBattle()">＋ 新战场</button>
+    <button class="iconbtn" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="list" id="vlist"></div>
+  <div style="padding:8px 12px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;font-size:12px;color:var(--dim);flex-wrap:wrap">
+    地图形状
+    <button class="iconbtn" style="height:32px;font-size:12px" onclick="applyPreset('满版')">满版</button>
+    <button class="iconbtn" style="height:32px;font-size:12px" onclick="applyPreset('八边形')">八边形</button>
+  </div>
+  <div class="df">
+    <select id="arch-sel" onchange="switchArchive(this.value)" class="btn" style="flex:1;text-align-last:center"></select>
+    <button class="iconbtn" onclick="importBase()">导入底图</button>
+  </div>
+</div>
+
+<!-- attack result -->
+<div class="scrim" id="scrim3" onclick="closeResult()"></div>
+<div class="result" id="result"></div>
+
+<!-- help -->
+<div class="scrim" id="scrim4" onclick="closeHelp()"></div>
+<div class="sheet" id="help">
+  <div class="handle"></div>
+  <h3>使用说明 <span class="coord">Duper 战场编辑器</span></h3>
+  <div class="help">
+    <p><b>点格子</b> = 编辑该地块：归属、地块等级、士兵/坦克/飞机加减、建筑、是否在地图中（可移出以拼出真实地图形状）。</p>
+    <p><b>底部三个模式键</b>：<br>🦶 移动范围 — 点你的有兵格，按移动力高亮可达格（曼哈顿）。<br>⚔️ 攻击预览 — 点你的进攻格 → 相邻敌/中立目标，弹出 AP/DP 与结果。<br>⎘ 复制为新变化 — 基于当前局面分叉一个新变化继续推演；↶ 撤销上一步。</p>
+    <p><b>图标</b>：👣士兵(战力1/移动1) · 🛡️坦克(3/5,可支援) · ✈️飞机(4/7) · ⌂基地 · ▣堡垒(7) · ✦中心 · ⛨该格防御力DP。</p>
+    <p><b>队伍色</b>：青=玩家1(庄家) 绿=2 蓝=3 红=4 黄=5。</p>
+    <p><b>战斗</b>：AP&gt;DP 占领。DP = 守军 + 建筑 + 地块Buff + 钥匙(防守方持进攻方颜色钥匙每把+2) + 相邻同色坦克支援；NPC格按等级计防御。</p>
+    <p><b>存档</b>：自动存到本机浏览器（换设备不通用）。☰ 变化列表里可切换/新建战场、改名/删变化、导入地图编辑器的 JSON 当底图。</p>
+  </div>
+  <button class="btn primary" style="width:100%;margin-top:14px" onclick="closeHelp()">知道了</button>
+</div>
+
+<!-- import base map -->
+<div class="scrim" id="scrim5" onclick="closeImport()"></div>
+<div class="sheet" id="import">
+  <div class="handle"></div>
+  <h3>导入底图 <span class="coord">粘贴 JSON</span></h3>
+  <p style="font-size:12px;color:var(--dim);margin:6px 0 10px;line-height:1.6">把地图编辑器导出的 JSON 粘到下面（支持 <code>{cells,keys}</code> 或 2D 数组；字段短名 e/o/l/b/bl/g/gc/a/ac 或长名 enabled/owner/… 都识别）。导入会替换当前局面的棋盘。</p>
+  <textarea id="import-text" placeholder='在此粘贴 JSON…' spellcheck="false" autocapitalize="off" style="width:100%;height:36vh;background:#0f1318;border:1px solid var(--line2);border-radius:10px;color:var(--ink);padding:10px;font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.5;resize:none"></textarea>
+  <div id="import-err" style="font-size:12px;color:var(--danger);margin-top:6px;min-height:16px;word-break:break-all"></div>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <button class="btn" style="flex:1" onclick="closeImport()">取消</button>
+    <button class="btn primary" style="flex:2" onclick="doImportText()">导入为当前局面</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+//  Duper 战场编辑器（手机优先） — 规则依据 knowledge/keystone-rules.md
+//  数据格式与 analysis.html 兼容（同一 localStorage：duper_an_*）
+// ============================================================
+const ROWS=7, COLS=7;
+const BASE_POS=new Set(['1,1','1,5','5,1','5,5','3,3']);   // 四角+中心(庄家)
+// 真实队伍色：P1青 P2绿 P3蓝 P4红 P5黄
+const TEAM=['#3a4456','#23d3ee','#46e08c','#4d8bff','#ff5070','#ffd23a'];
+const TEAM_NAME=['中立','青','绿','蓝','红','黄'];
+const UNIT={soldier:{p:1},tank:{p:3},plane:{p:4}};
+const MOVE={soldier:1,tank:5,plane:7};   // 每回合移动力（曼哈顿格数）；基地Lv4=5
+const BUILD_PWR={base:{1:6,2:10,3:15,4:18},fort:7,center:0};
+const TILE_BUFF={1:1,2:2,3:4};
+const NPC_DEF={1:1,2:2,3:4};   // 中立NPC防御（Lv3 实为3-6，取代表值4）
+const BLD_ICON={none:'',base:'⌂',fort:'▣',center:'✦'};
+const isBase=(r,c)=>BASE_POS.has(r+','+c);
+
+// ---------- cell / board ----------
+function blankCell(r,c){return {enabled:true,owner:0,showLevel:false,level:1,
+  building:isBase(r,c)?'base':'none',baseLevel:1,ground:'none',groundCount:0,hasAir:false,airCount:0};}
+function blankBoard(){const b=[];for(let r=0;r<ROWS;r++){b[r]=[];for(let c=0;c<COLS;c++)b[r][c]=blankCell(r,c);}return b;}
+// 真实开局：庄家(青)中心基地、其余四角；每人基地Lv1 + 4 士兵（规则：Start）
+function startBoard(){ const b=blankBoard();
+  const seats=[[3,3,1],[1,1,2],[1,5,3],[5,1,4],[5,5,5]];
+  for(const [r,c,o] of seats){ const d=b[r][c]; d.owner=o; d.showLevel=true; d.level=1;
+    d.building='base'; d.baseLevel=1; d.ground='soldier'; d.groundCount=4; }
+  return b; }
+function clone(o){return JSON.parse(JSON.stringify(o));}
+
+// ground holds one class (soldier|tank) + count; plane separate. For UI we expose soldier/tank/plane counts.
+function getCount(cell,u){ if(u==='plane')return cell.hasAir?cell.airCount:0; return (cell.ground===u)?cell.groundCount:0; }
+function setCount(cell,u,n){ n=Math.max(0,n|0);
+  if(u==='plane'){ cell.hasAir=n>0; cell.airCount=n; return; }
+  // soldier/tank share the single ground slot (game: 1 ground class per tile)
+  if(n===0){ if(cell.ground===u){cell.ground='none';cell.groundCount=0;} return; }
+  cell.ground=u; cell.groundCount=n;
+}
+function tileDP(b,r,c){ const d=b[r][c]; if(!d.enabled)return 0;
+  let p=0; if(d.ground!=='none')p+=UNIT[d.ground].p*d.groundCount; if(d.hasAir)p+=UNIT.plane.p*d.airCount;
+  if(d.building==='base')p+=BUILD_PWR.base[d.baseLevel||1]||6; else if(d.building==='fort')p+=BUILD_PWR.fort;
+  // adjacent same-owner tank support
+  if(d.owner>0)for(const[nr,nc]of[[r-1,c],[r+1,c],[r,c-1],[r,c+1]]){ if(nr<0||nr>=ROWS||nc<0||nc>=COLS)continue;
+    const t=b[nr][nc]; if(t.enabled&&t.owner===d.owner&&t.ground==='tank'&&t.groundCount>0)p+=UNIT.tank.p*t.groundCount; }
+  p+=TILE_BUFF[d.level]||1;
+  return p;
+}
+
+// ---------- 战斗结算（AP/DP→死亡优先级扣兵，规则: keystone-rules.md）----------
+const nb=(r,c)=>[[r-1,c],[r+1,c],[r,c-1],[r,c+1]].filter(([a,b])=>a>=0&&a<ROWS&&b>=0&&b<COLS);
+function onTilePower(d){let p=0;if(d.ground!=='none')p+=UNIT[d.ground].p*d.groundCount;if(d.hasAir)p+=UNIT.plane.p*d.airCount;return p;}
+function supportPower(b,r,c,owner){let p=0;for(const[nr,nc]of nb(r,c)){const t=b[nr][nc];if(t.enabled&&t.owner===owner&&t.ground==='tank'&&t.groundCount>0)p+=UNIT.tank.p*t.groundCount;}return p;}
+function buildingPower(d){if(d.building==='base')return BUILD_PWR.base[d.baseLevel||1]||6;if(d.building==='fort')return BUILD_PWR.fort;return 0;}
+function keyBuff(dOwner,aOwner){const p=tree.players&&tree.players[dOwner-1];if(!p||!p.keys)return 0;return 2*(p.keys[aOwner-1]||0);}
+function defenderStacks(b,dr,dc){const d=b[dr][dc],st=[];
+  if(d.ground==='soldier'&&d.groundCount>0)st.push({label:'士兵',power:1,count:d.groundCount});
+  if(d.ground==='tank'&&d.groundCount>0)st.push({label:'坦克',power:3,count:d.groundCount});
+  if(d.hasAir&&d.airCount>0)st.push({label:'飞机',power:4,count:d.airCount});
+  let sup=0;for(const[nr,nc]of nb(dr,dc)){const t=b[nr][nc];if(t.enabled&&t.owner===d.owner&&t.ground==='tank'&&t.groundCount>0)sup+=t.groundCount;}
+  if(sup>0)st.push({label:'支援坦克',power:3,count:sup});
+  return st;}
+function applyDamage(stacks,dmg){const surv=[];let rem=dmg;for(const s of stacks){let a=s.count;while(a>0&&rem>=s.power){rem-=s.power;a--;}if(a>0)surv.push({label:s.label,count:a});}return surv;}
+function survText(s){return(!s||!s.length)?'守军全灭':s.map(x=>x.label+'×'+x.count).join('，');}
+function computeBattle(b,ar,ac,dr,dc){
+  const A=b[ar][ac],D=b[dr][dc];
+  let ap=onTilePower(A)+supportPower(b,ar,ac,A.owner); if(A.building==='fort')ap+=BUILD_PWR.fort;
+  const isNpc=D.owner<=0;
+  const tBuff=isNpc?0:(TILE_BUFF[D.level]||1);
+  const kBuff=(!isNpc&&A.owner>0)?keyBuff(D.owner,A.owner):0;
+  const npc=isNpc?(NPC_DEF[D.level]||1):0;
+  const stacks=defenderStacks(b,dr,dc);
+  const bPower=buildingPower(D);
+  const baseDef=tBuff+kBuff+npc;                 // 不可被逐兵扣除的固定防御
+  const dp=stacks.reduce((s,x)=>s+x.power*x.count,0)+bPower+baseDef;
+  let category,survivors=null;
+  if(ap>dp)category='win';
+  else if(ap===dp){category='draw';survivors=applyDamage(stacks,Math.max(0,ap-baseDef));}
+  else{survivors=applyDamage(stacks,Math.max(0,ap-baseDef));category=(stacks.length>0&&survivors.length===0)?'clear':'loss';}
+  return {ap,dp,tBuff,kBuff,bPower,npc,category,survivors};
+}
+const CATR={win:['占领','#46e08c'],draw:['平局','#ffd23a'],clear:['清场','#c79bff'],loss:['失败','#ff5070']};
+
+// ============================================================
+//  状态（与 analysis.html 同构：tree.nodes + board）
+// ============================================================
+let tree=null, selId=null, uid=1, selTile=null, undoStack=[];
+let attackMode=false, atkTile=null;
+let moveMode=false, moveSrc=null;
+function tileMove(d){ let m=0;
+  if(d.ground==='soldier'&&d.groundCount>0)m=Math.max(m,MOVE.soldier);
+  if(d.ground==='tank'&&d.groundCount>0)m=Math.max(m,MOVE.tank);
+  if(d.hasAir&&d.airCount>0)m=Math.max(m,MOVE.plane);
+  if(d.building==='base'&&(d.baseLevel||1)===4)m=Math.max(m,5);
+  return m; }
+function newId(){return 'n'+(uid++);}
+function defaultPlayers(){return [0,1,2,3,4].map(i=>({coins:0,ap:2,apCap:i===0?3:2,hand:[],keys:[0,0,0,0,0]}));}
+function emptyTree(name){return {name,title:name,players:defaultPlayers(),rootId:null,nodes:{}};}
+function addNode(parentId,board,label,category){
+  const id=newId();
+  tree.nodes[id]={id,parentId,children:[],board,op:null,category:category||'root',cost:0,note:'',label:label||(category==='root'?'基础局面':'新变化')};
+  if(parentId&&tree.nodes[parentId])tree.nodes[parentId].children.push(id);
+  return id;
+}
+function curNode(){return tree.nodes[selId];}
+function curBoard(){return curNode().board;}
+
+// ============================================================
+//  渲染：棋盘
+// ============================================================
+function render(){
+  const n=curNode(); if(!n)return;
+  document.getElementById('t-name').textContent=tree.title||tree.name;
+  document.getElementById('t-cat').textContent=n.label||'局面';
+  document.getElementById('t-count').textContent='变化·'+Object.keys(tree.nodes).length;
+  const host=document.getElementById('board'); host.style.setProperty('--cols',COLS);
+  let h='';
+  const b=n.board;
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    const d=b[r][c];
+    if(!d.enabled){ h+=`<div class="tile off" onclick="tapTile(${r},${c})"></div>`; continue; }
+    let cls='tile'; if(d.owner>0)cls+=' t'+d.owner; if(d.owner===0&&d.level>1)cls+=' lvl'+d.level;
+    if(isBase(r,c))cls+=' base-pos';
+    if(attackMode&&atkTile){ if(atkTile.r===r&&atkTile.c===c)cls+=' atk-src';
+      else if(nb(atkTile.r,atkTile.c).some(([a2,b2])=>a2===r&&b2===c)&&d.owner!==b[atkTile.r][atkTile.c].owner)cls+=' atk-tgt'; }
+    if(moveMode&&moveSrc){ if(moveSrc.r===r&&moveSrc.c===c)cls+=' mv-src';
+      else if(d.enabled&&(Math.abs(r-moveSrc.r)+Math.abs(c-moveSrc.c))<=moveSrc.m)cls+=' mv-reach'; }
+    let troops='';
+    const sc=getCount(d,'soldier'),tc=getCount(d,'tank'),pc=getCount(d,'plane');
+    if(sc)troops+=`<span class="u s">${sc}<i>👣</i></span>`;
+    if(tc)troops+=`<span class="u t">${tc}<i>🛡️</i></span>`;
+    if(pc)troops+=`<span class="u p">${pc}<i>✈️</i></span>`;
+    const bld=d.building!=='none'?`<span class="bld">${BLD_ICON[d.building]}${d.building==='base'?`<sub style="font-size:7px">${d.baseLevel}</sub>`:''}</span>`:'';
+    const lv=(d.owner>0||d.level>1)?`<span class="lv">L${d.level}</span>`:'';
+    const dp=(d.owner>0)?`<span class="dp">⛨${tileDP(b,r,c)}</span>`:'';
+    h+=`<div class="${cls}" onclick="tapTile(${r},${c})">
+      <div class="own"></div>${lv}${bld}
+      ${(troops)?`<div class="troops">${troops}</div>`:`<div class="empty"></div>`}${dp}
+    </div>`;
+  }
+  host.innerHTML=h;
+  document.getElementById('undo-btn').style.opacity=undoStack.length?1:.4;
+  renderScore();
+}
+function renderScore(){
+  const b=curBoard(); const stat=[1,2,3,4,5].map(o=>({o,tiles:0,troops:0}));
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const d=b[r][c]; if(!d.enabled||d.owner<1)continue;
+    const s=stat[d.owner-1]; s.tiles++; s.troops+=(d.ground!=='none'?d.groundCount:0)+(d.hasAir?d.airCount:0); }
+  document.getElementById('score').innerHTML=stat.filter(s=>s.tiles>0).map(s=>
+    `<div class="sc" style="color:${TEAM[s.o]}"><i style="background:${TEAM[s.o]}"></i><b>${s.tiles}</b><small>地</small> <b>${s.troops}</b><small>兵</small></div>`
+  ).join('')||'<div class="sc"><small>空局面 · 点格子开始摆放</small></div>';
+}
+
+// ============================================================
+//  点击地块 → 底部编辑面板
+// ============================================================
+function tapTile(r,c){ if(attackMode){ attackTap(r,c); return; } if(moveMode){ moveTap(r,c); return; } selTile={r,c}; openSheet(); }
+function toggleAttack(){ attackMode=!attackMode; atkTile=null;
+  if(attackMode){ moveMode=false; moveSrc=null; document.getElementById('mv-btn').classList.remove('on'); }
+  document.getElementById('atk-btn').classList.toggle('on',attackMode);
+  render(); toast(attackMode?'⚔ 攻击预览：先点你的进攻格 → 再点相邻敌方目标':'已退出攻击预览'); }
+function toggleMove(){ moveMode=!moveMode; moveSrc=null;
+  if(moveMode){ attackMode=false; atkTile=null; document.getElementById('atk-btn').classList.remove('on'); }
+  document.getElementById('mv-btn').classList.toggle('on',moveMode);
+  render(); toast(moveMode?'🦶 移动范围：点你的有兵地块，看可达格':'已退出移动范围'); }
+function moveTap(r,c){ const d=curBoard()[r][c]; if(!d.enabled){ toast('选有效地块'); return; }
+  if(moveSrc&&moveSrc.r===r&&moveSrc.c===c){ moveSrc=null; render(); return; }
+  const m=tileMove(d); if(d.owner<1||m<=0){ toast('选你的有兵地块（看它能走多远）'); return; }
+  moveSrc={r,c,m}; render(); toast('移动力 '+m+' 格（曼哈顿）'); }
+function attackTap(r,c){
+  const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选有效地块'); return; }
+  if(!atkTile){ if(d.owner<1||onTilePower(d)<=0){ toast('进攻方需是你的有兵地块'); return; } atkTile={r,c}; render(); toast('再点相邻敌方/中立目标'); return; }
+  if(atkTile.r===r&&atkTile.c===c){ atkTile=null; render(); return; }
+  if(!nb(atkTile.r,atkTile.c).some(([nr,nc])=>nr===r&&nc===c)){ toast('目标须与进攻地块相邻'); return; }
+  if(d.owner===b[atkTile.r][atkTile.c].owner){ toast('目标须是敌方/中立地块'); return; }
+  const src=atkTile; const res=computeBattle(b,src.r,src.c,r,c);
+  atkTile=null; render(); showBattleResult(res,src,{r,c});
+}
+function showBattleResult(res,a,t){
+  const [lab,col]=CATR[res.category];
+  document.getElementById('result').innerHTML=`<div class="rcard">
+    <div style="display:flex;align-items:center"><span class="rcat" style="color:${col};border-color:${col}">${lab}</span><span class="rvs">进攻 (${a.r},${a.c}) → 目标 (${t.r},${t.c})</span></div>
+    <div class="rap"><b style="color:#ffd9a3">AP ${res.ap}</b><span>vs</span><b style="color:#bfe3ff">DP ${res.dp}</b></div>
+    <div class="rdetail">DP 含 ${res.npc?('NPC防御 '+res.npc+' · '):''}地块Buff ${res.tBuff} · 钥匙 ${res.kBuff} · 建筑 ${res.bPower}</div>
+    <div class="rres" style="color:${col}">${res.category==='win'?'✅ 占领目标，进攻方全军移入':'守军剩余：'+survText(res.survivors)}</div>
+    <button class="btn primary" style="width:100%;margin-top:15px" onclick="closeResult()">好</button>
+  </div>`;
+  document.getElementById('scrim3').classList.add('on');
+  document.getElementById('result').classList.add('on');
+}
+function closeResult(){ document.getElementById('scrim3').classList.remove('on'); document.getElementById('result').classList.remove('on'); }
+function openHelp(){ document.getElementById('scrim4').classList.add('on'); document.getElementById('help').classList.add('on'); }
+function closeHelp(){ document.getElementById('scrim4').classList.remove('on'); document.getElementById('help').classList.remove('on'); }
+function openSheet(){
+  document.body.classList.add('editing');
+  const {r,c}=selTile, d=curBoard()[r][c];
+  document.getElementById('s-coord').textContent=`(${r},${c})`+(isBase(r,c)?' · 出生点':'');
+  document.getElementById('s-title').textContent='编辑地块';
+  document.getElementById('s-enabled').innerHTML=[[true,'✓ 在地图中'],[false,'✕ 移出地图']].map(([v,lab])=>
+    `<button class="chip ${d.enabled===v?'on':''}" onclick="setEnabled(${v})">${lab}</button>`).join('');
+  document.getElementById('s-body').style.display=d.enabled?'block':'none';
+  // owner circles
+  document.getElementById('s-owner').innerHTML=[0,1,2,3,4,5].map(o=>
+    `<button class="owncircle ${d.owner===o?'on':''}" onclick="setOwner(${o})">
+       <div class="dotc" style="background:${TEAM[o]}"></div>${d.owner===o?'<span class="tick">✓</span>':''}
+     </button>`).join('');
+  // level
+  document.getElementById('s-level').innerHTML=[1,2,3].map(l=>
+    `<button class="chip ${d.level===l?'on':''}" onclick="setLevel(${l})">L${l} <i style="font-style:normal;color:var(--dim);font-size:11px">+${TILE_BUFF[l]}</i></button>`).join('');
+  // units
+  ['soldier','tank','plane'].forEach(u=>document.getElementById('v-'+u).textContent=getCount(d,u));
+  // building
+  const blds=[['none','无',''],['base','基地','⌂'],['fort','堡垒','▣'],['center','中心','✦']];
+  document.getElementById('s-bld').innerHTML=blds.map(([k,nm,ic])=>
+    `<button class="chip ${d.building===k?'on':''}" onclick="setBuild('${k}')">${ic} ${nm}</button>`).join('');
+  const blv=document.getElementById('s-baselv');
+  if(d.building==='base'){ blv.style.display='flex';
+    blv.innerHTML=[1,2,3,4].map(l=>`<button class="chip ${d.baseLevel===l?'on':''}" onclick="setBaseLv(${l})">基${l}<i style="font-style:normal;color:var(--dim);font-size:10px;margin-left:3px">${BUILD_PWR.base[l]}</i></button>`).join('');
+  } else blv.style.display='none';
+  refreshDP();
+  document.getElementById('scrim').classList.add('on');
+  document.getElementById('sheet').classList.add('on');
+}
+function closeSheet(){ document.body.classList.remove('editing'); document.getElementById('scrim').classList.remove('on'); document.getElementById('sheet').classList.remove('on'); render(); scheduleSave(); }
+function refreshDP(){ const {r,c}=selTile; document.getElementById('s-dp').textContent=tileDP(curBoard(),r,c); }
+
+function pushUndo(){ undoStack.push(clone(curBoard())); if(undoStack.length>40)undoStack.shift(); }
+function edit(fn){ pushUndo(); fn(curBoard()[selTile.r][selTile.c]); openSheet(); render(); scheduleSave(); }
+function setEnabled(v){ pushUndo(); const d=curBoard()[selTile.r][selTile.c]; d.enabled=v;
+  if(!v){ d.owner=0; d.ground='none'; d.groundCount=0; d.hasAir=false; d.airCount=0; d.building='none'; }
+  openSheet(); render(); scheduleSave(); }
+function setOwner(o){ edit(d=>{ d.owner=o; if(o>0&&!d.showLevel)d.showLevel=true; }); }
+function setLevel(l){ edit(d=>{ d.level=l; d.showLevel=true; }); }
+function setBuild(k){ edit(d=>{ d.building=k; if(k==='base'&&!d.baseLevel)d.baseLevel=1; }); }
+function setBaseLv(l){ edit(d=>{ d.baseLevel=l; }); }
+function bump(u,delta){ pushUndo(); const d=curBoard()[selTile.r][selTile.c]; setCount(d,u,getCount(d,u)+delta);
+  ['soldier','tank','plane'].forEach(x=>document.getElementById('v-'+x).textContent=getCount(d,x)); refreshDP(); render(); scheduleSave(); }
+function undoLast(){ if(!undoStack.length)return; curNode().board=undoStack.pop(); render(); scheduleSave(); toast('已撤销'); }
+
+// ============================================================
+//  分叉：复制为新变化
+// ============================================================
+function forkVariation(){
+  const parent=curNode();
+  const id=addNode(parent.id, clone(parent.board), '变化 '+(parent.children.length+1), 'edit');
+  selId=id; undoStack=[]; render(); scheduleSave(); renderDrawer();
+  toast('已基于当前复制出新变化 → 开始编辑');
+}
+
+// ============================================================
+//  变化列表抽屉
+// ============================================================
+function openDrawer(){ renderDrawer(); refreshArchiveSel(); document.getElementById('scrim2').classList.add('on'); document.getElementById('drawer').classList.add('on'); }
+function closeDrawer(){ document.getElementById('scrim2').classList.remove('on'); document.getElementById('drawer').classList.remove('on'); }
+function renderDrawer(){
+  const host=document.getElementById('vlist'); if(!tree.rootId){host.innerHTML='<div style="color:var(--dim);padding:16px;font-size:13px">还没有局面</div>';return;}
+  let h='';
+  (function walk(id,depth){ const n=tree.nodes[id]; if(!n)return;
+    const col=n.category==='root'?'var(--gold)':'var(--dim2)';
+    h+=`<div class="vnode ${id===selId?'on':''}" onclick="gotoNode('${id}')">
+      <span class="twig" style="padding-left:${depth*12}px;color:${col}">${depth?'└':'●'}</span>
+      <span class="nm" ondblclick="renameNode('${id}',event)">${esc(n.label)} ${n.children.length?'<small>('+n.children.length+'枝)</small>':''}</span>
+      <span class="mini" onclick="renameNode('${id}',event)">✎</span>
+      ${n.parentId?`<span class="mini" onclick="delNode('${id}',event)">🗑</span>`:''}
+    </div>`;
+    n.children.forEach(ch=>walk(ch,depth+1));
+  })(tree.rootId,0);
+  host.innerHTML=h;
+}
+function gotoNode(id){ selId=id; undoStack=[]; render(); renderDrawer(); closeDrawer(); }
+function renameNode(id,e){ e&&e.stopPropagation(); const n=tree.nodes[id]; const v=prompt('变化名称：',n.label); if(v==null)return; n.label=v.trim()||n.label; render(); renderDrawer(); scheduleSave(); }
+function delNode(id,e){ e&&e.stopPropagation(); const n=tree.nodes[id]; if(!n.parentId)return;
+  if(!confirm('删除「'+n.label+'」及其所有子变化？'))return;
+  (function rm(x){const nd=tree.nodes[x];if(!nd)return;nd.children.slice().forEach(rm);delete tree.nodes[x];})(id);
+  const p=tree.nodes[n.parentId]; p.children=p.children.filter(c=>c!==id);
+  if(selId===id||!tree.nodes[selId])selId=n.parentId;
+  render(); renderDrawer(); scheduleSave();
+}
+
+// ============================================================
+//  存档（localStorage，与 analysis.html 同格式 duper_an_*）
+// ============================================================
+const LS='duper_an_';
+function serialize(){return {name:tree.name,title:tree.title,updated:Date.now(),players:tree.players,rootId:tree.rootId,nodes:tree.nodes,uid};}
+function hydrate(d){ let players=d.players||defaultPlayers();
+  tree={name:d.name,title:d.title||d.name,players,rootId:d.rootId,nodes:d.nodes||{}};
+  uid=d.uid||(Object.keys(tree.nodes).length+1); selId=tree.rootId; undoStack=[];
+  // ensure boards are full 7x7 (compat)
+}
+let saveT=null;
+function scheduleSave(){ if(!tree)return; setSave('待存…'); clearTimeout(saveT); saveT=setTimeout(doSave,400); }
+function doSave(){ try{ localStorage.setItem(LS+tree.name,JSON.stringify(serialize())); setSave('已存 ✓'); }catch(e){ setSave('存储失败'); } }
+function setSave(t){ document.getElementById('t-save').textContent=t; }
+function listArchives(){ const out=[]; for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);
+  if(k&&k.indexOf(LS)===0){try{const d=JSON.parse(localStorage.getItem(k));out.push({name:d.name,title:d.title||d.name,updated:d.updated||0,nodes:Object.keys(d.nodes||{}).length});}catch(e){}}}
+  out.sort((a,b)=>b.updated-a.updated); return out; }
+function refreshArchiveSel(){ const sel=document.getElementById('arch-sel'); const l=listArchives();
+  sel.innerHTML=l.map(x=>`<option value="${esc(x.name)}" ${x.name===tree.name?'selected':''}>${esc(x.title)} · ${x.nodes}变化</option>`).join('')||'<option>（空）</option>'; }
+function switchArchive(name){ if(name===tree.name)return; const d=JSON.parse(localStorage.getItem(LS+name)||'null'); if(!d)return; hydrate(d); render(); renderDrawer(); closeDrawer(); toast('已切到「'+d.title+'」'); }
+function newBattle(){ const name=prompt('新战场名称：','战场'+new Date().toISOString().slice(5,10).replace('-','')); if(!name)return;
+  tree=emptyTree(name.trim()); const id=addNode(null,startBoard(),'基础局面','root'); tree.rootId=id; selId=id; undoStack=[];
+  render(); renderDrawer(); refreshArchiveSel(); doSave(); toast('已建新战场'); }
+function applyPreset(name){
+  if(!confirm('套用「'+name+'」地图形状？只改哪些格在地图中，不动已放的单位（出生点始终保留）。'))return;
+  pushUndo(); const b=curBoard();
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    let on=true;
+    if(name==='八边形'){ if(r+c<2||r+(6-c)<2||(6-r)+c<2||(6-r)+(6-c)<2) on=false; }
+    if(isBase(r,c)) on=true;
+    const d=b[r][c]; d.enabled=on;
+    if(!on){ d.owner=0;d.ground='none';d.groundCount=0;d.hasAir=false;d.airCount=0;d.building='none'; }
+  }
+  render(); scheduleSave(); closeDrawer(); toast('已套用「'+name+'」形状');
+}
+function importBase(){ closeDrawer();
+  document.getElementById('import-text').value=''; document.getElementById('import-err').textContent='';
+  document.getElementById('scrim5').classList.add('on'); document.getElementById('import').classList.add('on');
+  setTimeout(()=>document.getElementById('import-text').focus(),250); }
+function closeImport(){ document.getElementById('scrim5').classList.remove('on'); document.getElementById('import').classList.remove('on'); }
+const BLD_MAP={turret:'fort',fort:'fort',economy:'center',defense:'center',airbase:'center',plane:'center',center:'center',base:'base',none:'none'};
+function importCell(s,d){ const g=(k1,k2,def)=> s[k1]!==undefined?s[k1]:(s[k2]!==undefined?s[k2]:def);
+  d.enabled=!!g('e','enabled',1); d.owner=+g('o','owner',0)||0; d.level=+g('l','level',1)||1;
+  d.showLevel=!!g('sl','showLevel',false);
+  const bld=String(g('b','building','none')||'none'); d.building=BLD_MAP[bld]!==undefined?BLD_MAP[bld]:'none';
+  d.baseLevel=+g('bl','baseLevel',1)||1;
+  const gr=String(g('g','ground','none')||'none'); d.ground=(gr==='soldier'||gr==='tank')?gr:'none';
+  d.groundCount=+g('gc','groundCount',0)||0; if(d.ground==='none')d.groundCount=0;
+  d.airCount=+g('ac','airCount',0)||0; d.hasAir=(!!g('a','hasAir',false))||d.airCount>0; }
+function doImportText(){
+  const txt=document.getElementById('import-text').value.trim(); const err=document.getElementById('import-err'); err.textContent='';
+  if(!txt){ err.textContent='请先粘贴 JSON'; return; }
+  let p; try{ p=JSON.parse(txt); }catch(e){ err.textContent='JSON 解析失败：'+e.message; return; }
+  const data=Array.isArray(p)?p:(p.cells||p.board||p.grid||p.data||p.tiles||[]);
+  if(!Array.isArray(data)||!data.length||!Array.isArray(data[0])){ err.textContent='没找到棋盘数据（应是 {cells:[...]} 这样的 2D 数组）。当前顶层字段：'+(Array.isArray(p)?'数组':Object.keys(p).join(',')); return; }
+  const b=blankBoard(); let filled=0;
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){ const s=data[r]&&data[r][c]; if(!s||typeof s!=='object')continue; importCell(s,b[r][c]); filled++; }
+  // 钥匙（若有）→ 各玩家
+  const keys=(!Array.isArray(p)&&p.keys)?p.keys:null;
+  if(keys&&tree.players)for(let i=0;i<5;i++){ if(Array.isArray(keys[i])) tree.players[i].keys=keys[i].slice(0,5).map(x=>+x||0); }
+  pushUndo(); curNode().board=b; render(); scheduleSave(); closeImport(); toast('已导入底图（'+filled+' 格）为当前局面');
+}
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+let toastT=null; function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),1900);}
+
+// ============================================================
+//  Boot
+// ============================================================
+(function boot(){
+  const l=listArchives();
+  if(l.length){ const d=JSON.parse(localStorage.getItem(LS+l[0].name)); hydrate(d); }
+  else { tree=emptyTree('战场1'); const id=addNode(null,startBoard(),'基础局面','root'); tree.rootId=id; selId=id; doSave(); }
+  render();
+})();
+</script>
+</body>
+</html>
