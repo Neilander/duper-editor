@@ -548,7 +548,7 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
       carried=' + '+(A.ground==='tank'?'坦克':'士兵')+'×'+A.groundCount+'随行';
       A.ground='none'; A.groundCount=0; delete A.gm;
     }
-    const left=B.am; moveSrc=null; render(); selTile={r,c}; showCellInfo(r,c); scheduleSave();
+    const left=B.am; moveSrc=null; commitAsBranch('空运→('+r+','+c+')'); selTile={r,c}; render(); showCellInfo(r,c); renderDrawer(); scheduleSave();
     toast('飞机×'+qty+carried+' 移动 '+cost+' 格，飞机移动力剩 '+left); return;
   }
   if(B.ground!=='none'&&B.ground!==A.ground){
@@ -570,7 +570,7 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
     const dst=b[via.r][via.c];
     if(dst.ground===Vt&&dst.groundCount>0){ dst.groundCount+=Vc; dst.gm=Math.min(gStam(dst),Vs-1); }
     else { dst.ground=Vt; dst.groundCount=Vc; dst.gm=Vs-1; dst.showLevel=true; }
-    moveSrc=null; render(); selTile={r,c}; showCellInfo(r,c); scheduleSave();
+    moveSrc=null; commitAsBranch('换位→('+r+','+c+')'); selTile={r,c}; render(); showCellInfo(r,c); renderDrawer(); scheduleSave();
     toast('换位：'+(Ut==='tank'?'坦克':'士兵')+'×'+qty+'进('+r+','+c+')，'+(Vt==='tank'?'坦克':'士兵')+'×'+Vc+'退到('+via.r+','+via.c+')');
     return;
   }
@@ -579,8 +579,8 @@ function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选
   if(B.ground===A.ground&&B.groundCount>0){ B.groundCount+=qty; B.gm=Math.min(gStam(B),arriveStam); }
   else { B.ground=A.ground; B.groundCount=qty; B.gm=arriveStam; B.showLevel=true; }
   A.groundCount-=qty; if(A.groundCount<=0){ A.ground='none'; A.groundCount=0; delete A.gm; }
-  const left=B.gm; moveSrc=null; render(); selTile={r,c}; showCellInfo(r,c); scheduleSave();
-  toast('移动 '+(d.ground==='tank'?'坦克':'士兵')+'×'+qty+'，'+cost+' 格，移动力剩 '+left); }
+  const left=B.gm, mv=(d.ground==='tank'?'坦克':'士兵'); moveSrc=null; commitAsBranch('移动→('+r+','+c+')'); selTile={r,c}; render(); showCellInfo(r,c); renderDrawer(); scheduleSave();
+  toast('移动 '+mv+'×'+qty+'，'+cost+' 格，移动力剩 '+left); }
 // 攻击范围：飞机=直线飞越内任意敌/中立；坦克=沿己方territory走到的格的相邻敌/中立；士兵=仅相邻
 function attackTargets(b,ar,ac){
   const A=b[ar][ac], owner=A.owner, set=new Set();
@@ -653,8 +653,10 @@ function applyBattle(){
   }
   // 进攻方 all-in：源格可动部队清空（建筑/归属保留）
   A.ground='none'; A.groundCount=0; A.hasAir=false; A.airCount=0;
-  render(); scheduleSave(); closeResult();
-  toast(res.category==='win'?('已占领 ('+tgt.r+','+tgt.c+')'):'已结算，棋盘已更新');
+  const lab=CATR[res.category][0]; closeResult();
+  commitAsBranch('攻击('+src.r+','+src.c+')→('+tgt.r+','+tgt.c+') '+lab);
+  render(); renderDrawer(); scheduleSave();
+  toast(res.category==='win'?('已占领 ('+tgt.r+','+tgt.c+')，存为新分支'):'已结算，存为新分支');
 }
 function closeResult(){ document.getElementById('scrim3').classList.remove('on'); document.getElementById('result').classList.remove('on'); }
 function openHelp(){ document.getElementById('scrim4').classList.add('on'); document.getElementById('help').classList.add('on'); }
@@ -731,6 +733,16 @@ function undoLast(){ if(!undoStack.length)return; curNode().board=undoStack.pop(
 // ============================================================
 //  分叉：复制为新变化
 // ============================================================
+// 动作（移动/攻击）后：父局面恢复到动作前，把结果存进一个命名子分支并切过去
+function commitAsBranch(defLabel){
+  if(!undoStack.length) return;
+  const post=clone(curNode().board);                 // 动作后
+  const pre=undoStack[undoStack.length-1];            // 动作前（pushUndo 时的快照）
+  curNode().board=clone(pre);                         // 父恢复到动作前
+  const nm=prompt('这一步命名：', defLabel);
+  const label=(nm===null)?defLabel:(nm.trim()||defLabel);
+  selId=addNode(selId, post, label, 'edit'); undoStack=[];
+}
 function forkVariation(){
   const parent=curNode();
   const def='变化 '+(parent.children.length+1);
