@@ -175,7 +175,7 @@
   .tile.atk-tgt{box-shadow:inset 0 0 0 2px var(--danger),0 0 12px -3px var(--danger)}
   #mv-btn.on{background:linear-gradient(145deg,#0e3038,#0a1f24);border-color:var(--t1);color:var(--t1)}
   .tile.mv-src{box-shadow:0 0 0 2px var(--gold),0 0 16px -2px var(--gold);border-color:var(--gold)!important;z-index:2}
-  .tile.mv-reach{box-shadow:inset 0 0 0 2px var(--t1);background:rgba(35,211,238,.07)}
+  .tile.mv-reach{outline:2.5px dashed rgba(255,255,255,.9);outline-offset:-4px;background:rgba(255,255,255,.08)}
   body.editing #scrim{background:rgba(4,7,11,.28)}   /* 编辑时减淡遮罩，实时看到改动 */
 
   /* attack result card */
@@ -292,7 +292,7 @@
   <h3>使用说明 <span class="coord">Duper 战场编辑器</span></h3>
   <div class="help">
     <p><b>点格子</b> = 编辑该地块：归属、地块等级、士兵/坦克/飞机加减、建筑、是否在地图中（可移出以拼出真实地图形状）。</p>
-    <p><b>底部三个模式键</b>：<br>🦶 移动范围 — 点你的有兵格，按移动力高亮可达格（曼哈顿）。<br>⚔️ 攻击预览 — 点你的进攻格 → 相邻敌/中立目标，弹出 AP/DP 与结果。<br>⎘ 复制为新变化 — 基于当前局面分叉一个新变化继续推演；↶ 撤销上一步。</p>
+    <p><b>底部三个模式键</b>：<br>🦶 移动 — 点你的地面兵格 → 沿己方territory流动高亮可达格 → 点目标格移动；同兵种合并、移动力取两者最低（士兵1/坦克5/飞机7）。<br>⚔️ 攻击 — 点你的进攻格 → 相邻敌/中立目标，弹出 AP/DP，点"打这一仗"占领/扣兵改棋盘。<br>⎘ 复制为新变化 — 基于当前局面分叉一个新变化继续推演；↶ 撤销上一步。</p>
     <p><b>图标</b>：👣士兵(战力1/移动1) · 🛡️坦克(3/5,可支援) · ✈️飞机(4/7) · ⌂基地 · ▣堡垒(7) · ✦中心 · ⛨该格防御力DP。</p>
     <p><b>队伍色</b>：青=玩家1(庄家) 绿=2 蓝=3 红=4 黄=5。</p>
     <p><b>战斗</b>：AP&gt;DP 占领。DP = 守军 + 建筑 + 地块Buff + 钥匙(防守方持进攻方颜色钥匙每把+2) + 相邻同色坦克支援；NPC格按等级计防御。</p>
@@ -352,8 +352,8 @@ function getCount(cell,u){ if(u==='plane')return cell.hasAir?cell.airCount:0; re
 function setCount(cell,u,n){ n=Math.max(0,n|0);
   if(u==='plane'){ cell.hasAir=n>0; cell.airCount=n; return; }
   // soldier/tank share the single ground slot (game: 1 ground class per tile)
-  if(n===0){ if(cell.ground===u){cell.ground='none';cell.groundCount=0;} return; }
-  cell.ground=u; cell.groundCount=n;
+  if(n===0){ if(cell.ground===u){cell.ground='none';cell.groundCount=0;delete cell.gm;} return; }
+  cell.ground=u; cell.groundCount=n; delete cell.gm;   // 手动编辑视为满移动力
 }
 function tileDP(b,r,c){ const d=b[r][c]; if(!d.enabled)return 0;
   let p=0; if(d.ground!=='none')p+=UNIT[d.ground].p*d.groundCount; if(d.hasAir)p+=UNIT.plane.p*d.airCount;
@@ -405,12 +405,16 @@ const CATR={win:['占领','#46e08c'],draw:['平局','#ffd23a'],clear:['清场','
 let tree=null, selId=null, uid=1, selTile=null, undoStack=[];
 let attackMode=false, atkTile=null;
 let moveMode=false, moveSrc=null;
-function tileMove(d){ let m=0;
-  if(d.ground==='soldier'&&d.groundCount>0)m=Math.max(m,MOVE.soldier);
-  if(d.ground==='tank'&&d.groundCount>0)m=Math.max(m,MOVE.tank);
-  if(d.hasAir&&d.airCount>0)m=Math.max(m,MOVE.plane);
-  if(d.building==='base'&&(d.baseLevel||1)===4)m=Math.max(m,5);
-  return m; }
+// 地面兵的剩余移动力（gm 未设则视为满）；基地Lv4 当地面单位算
+function fullMove(d){ if(d.building==='base'&&(d.baseLevel||1)===4)return 5; return MOVE[d.ground]||0; }
+function gStam(d){ return (d.gm!=null)?d.gm:fullMove(d); }
+// 流体 flood-fill：从源格沿"己方相邻 enabled 格"扩散，步数=cost(1/格)，不超过 budget
+function reachMap(b,sr,sc,budget){
+  const owner=b[sr][sc].owner, dist={}; dist[sr+','+sc]=0; const q=[[sr,sc]];
+  while(q.length){ const [r,c]=q.shift(), d0=dist[r+','+c]; if(d0>=budget)continue;
+    for(const [nr,nc] of nb(r,c)){ const t=b[nr][nc]; if(!t.enabled||t.owner!==owner)continue;
+      const k=nr+','+nc; if(dist[k]==null){ dist[k]=d0+1; q.push([nr,nc]); } } }
+  return dist; }
 function newId(){return 'n'+(uid++);}
 function defaultPlayers(){return [0,1,2,3,4].map(i=>({coins:0,ap:2,apCap:i===0?3:2,hand:[],keys:[0,0,0,0,0]}));}
 function emptyTree(name){return {name,title:name,players:defaultPlayers(),rootId:null,nodes:{}};}
@@ -442,7 +446,7 @@ function render(){
     if(attackMode&&atkTile){ if(atkTile.r===r&&atkTile.c===c)cls+=' atk-src';
       else if(nb(atkTile.r,atkTile.c).some(([a2,b2])=>a2===r&&b2===c)&&d.owner!==b[atkTile.r][atkTile.c].owner)cls+=' atk-tgt'; }
     if(moveMode&&moveSrc){ if(moveSrc.r===r&&moveSrc.c===c)cls+=' mv-src';
-      else if(d.enabled&&(Math.abs(r-moveSrc.r)+Math.abs(c-moveSrc.c))<=moveSrc.m)cls+=' mv-reach'; }
+      else if(moveSrc.reach[r+','+c]!=null)cls+=' mv-reach'; }
     let troops='';
     const sc=getCount(d,'soldier'),tc=getCount(d,'tank'),pc=getCount(d,'plane');
     if(sc)troops+=`<span class="u s">${sc}<i>👣</i></span>`;
@@ -480,11 +484,32 @@ function toggleAttack(){ attackMode=!attackMode; atkTile=null;
 function toggleMove(){ moveMode=!moveMode; moveSrc=null;
   if(moveMode){ attackMode=false; atkTile=null; document.getElementById('atk-btn').classList.remove('on'); }
   document.getElementById('mv-btn').classList.toggle('on',moveMode);
-  render(); toast(moveMode?'🦶 移动范围：点你的有兵地块，看可达格':'已退出移动范围'); }
-function moveTap(r,c){ const d=curBoard()[r][c]; if(!d.enabled){ toast('选有效地块'); return; }
-  if(moveSrc&&moveSrc.r===r&&moveSrc.c===c){ moveSrc=null; render(); return; }
-  const m=tileMove(d); if(d.owner<1||m<=0){ toast('选你的有兵地块（看它能走多远）'); return; }
-  moveSrc={r,c,m}; render(); toast('移动力 '+m+' 格（曼哈顿）'); }
+  render(); toast(moveMode?'🦶 移动：点你的地面兵 → 点己方可达格（同兵种合并，移动力取最低）':'已退出移动'); }
+function moveTap(r,c){ const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选有效地块'); return; }
+  if(!moveSrc){
+    if(d.owner<1||d.ground==='none'||d.groundCount<=0){ toast('选你的有地面兵的格子'); return; }
+    const stam=gStam(d);
+    if(stam<=0){ toast('这些兵本回合移动力已用完'); return; }
+    moveSrc={r,c,stam,reach:reachMap(b,r,c,stam)};
+    render(); toast((d.ground==='tank'?'坦克':'士兵')+'×'+d.groundCount+'，移动力剩 '+stam+'，点己方可达格移动');
+    return;
+  }
+  if(moveSrc.r===r&&moveSrc.c===c){ moveSrc=null; render(); return; }
+  const cost=moveSrc.reach[r+','+c];
+  if(cost==null){ toast('超范围：只能沿己方相邻格流动'); return; }
+  const A=b[moveSrc.r][moveSrc.c], B=b[r][c];
+  if(B.ground!=='none'&&B.ground!==A.ground){ toast('目标已有不同地面兵种，无法合并'); return; }
+  pushUndo();
+  const arriveStam=gStam(A)-cost;
+  if(B.ground===A.ground&&B.groundCount>0){
+    B.groundCount+=A.groundCount;
+    B.gm=Math.min(gStam(B),arriveStam);   // 合并取最低移动力
+  } else {
+    B.ground=A.ground; B.groundCount=A.groundCount; B.gm=arriveStam; B.showLevel=true;
+  }
+  A.ground='none'; A.groundCount=0; delete A.gm;
+  const left=B.gm; moveSrc=null; render(); scheduleSave();
+  toast('移动 '+cost+' 格，合并后移动力剩 '+left); }
 function attackTap(r,c){
   const b=curBoard(), d=b[r][c]; if(!d.enabled){ toast('选有效地块'); return; }
   if(!atkTile){ if(d.owner<1||onTilePower(d)<=0){ toast('进攻方需是你的有兵地块'); return; } atkTile={r,c}; render(); toast('再点相邻敌方/中立目标'); return; }
@@ -519,7 +544,7 @@ function applyBattle(){
     // 占领：进攻方全军移入，目标改归属、敌建筑被摧毁
     D.owner=A.owner; D.showLevel=true;
     D.ground=A.ground; D.groundCount=A.groundCount; D.hasAir=A.hasAir; D.airCount=A.airCount;
-    D.building='none';
+    D.building='none'; delete D.gm;
   } else {
     // 未占领：只扣目标格"自身"部队（支援坦克属邻格，不动），按死亡优先级 士→坦→机
     const baseDef=(res.tBuff||0)+(res.kBuff||0)+(res.npc||0);
