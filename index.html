@@ -733,9 +733,13 @@ function undoLast(){ if(!undoStack.length)return; curNode().board=undoStack.pop(
 // ============================================================
 function forkVariation(){
   const parent=curNode();
-  const id=addNode(parent.id, clone(parent.board), '变化 '+(parent.children.length+1), 'edit');
+  const def='变化 '+(parent.children.length+1);
+  const name=prompt('新变化命名：', def);
+  if(name===null)return;   // 取消则不创建
+  const label=name.trim()||def;
+  const id=addNode(parent.id, clone(parent.board), label, 'edit');
   selId=id; undoStack=[]; clearActionState(); render(); scheduleSave(); renderDrawer();
-  toast('已基于当前复制出新变化 → 开始编辑');
+  toast('已复制为「'+label+'」 → 开始编辑');
 }
 
 // ============================================================
